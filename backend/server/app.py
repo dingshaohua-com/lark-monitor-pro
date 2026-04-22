@@ -1,11 +1,10 @@
-import os
-from contextlib import asynccontextmanager
-from dotenv import load_dotenv
 from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
 from server.router import router
-from server.middleware import register_middleware
+from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
 from server.exception import register_exception
+from server.middleware import register_middleware
 
 # 加载环境变量
 load_dotenv()

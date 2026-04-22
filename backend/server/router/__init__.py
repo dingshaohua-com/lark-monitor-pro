@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from . import root
-from . import work_order
+from . import lark_msg
 
 # 创建父路由，统一添加 /api 前缀
 router = APIRouter(prefix="/api")
