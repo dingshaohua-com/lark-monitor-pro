@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+
+/* 樱花背景：强制布局半透明以透出底层 canvas */
+.app-with-sakura .ant-layout {
+  background: transparent !important;
+}
+.app-with-sakura .ant-layout-sider,
+.app-with-sakura .ant-layout-header {
+  background: rgba(255, 255, 255, 0.75) !important;
+}
+.app-with-sakura .ant-layout-content {
+  background: rgba(255, 255, 255, 0.6) !important;
+}
+.app-with-sakura .ant-layout-sider-children,
+.app-with-sakura .ant-menu {
+  background: transparent !important;
+}
+.app-with-sakura .ant-card {
+  background: rgba(255, 255, 255, 0.82) !important;
+}
+.app-with-sakura .ant-table-wrapper,
+.app-with-sakura .ant-table,
+.app-with-sakura .ant-table-container table {
+  background: transparent !important;
+}
+.app-with-sakura .ant-table-thead > tr > th {
+  background: rgba(255, 255, 255, 0.6) !important;
+}
+.app-with-sakura .ant-table-tbody > tr > td {
+  background: rgba(255, 255, 255, 0.4) !important;
+}
+.app-with-sakura .ant-table-tbody > tr:hover > td {
+  background: rgba(255, 255, 255, 0.65) !important;
+}
+
+/* 工单详情弹窗：Descriptions 3 列固定宽度，不随内容伸缩 */
+.work-order-detail-descriptions .ant-descriptions-view {
+  table-layout: fixed;
+}
+.work-order-detail-descriptions .ant-descriptions-item-label,
+.work-order-detail-descriptions .ant-descriptions-item-content {
+  width: 16.666%; /* 3 列 × 2 单元格 = 6 列等分 */
+}
+
+/* 机器人回复 Markdown 样式 */
+.bot-reply-md h1, .bot-reply-md h2, .bot-reply-md h3,
+.bot-reply-md h4, .bot-reply-md h5, .bot-reply-md h6 {
+  margin: 0.6em 0 0.3em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.bot-reply-md h1 { font-size: 1.25em; }
+.bot-reply-md h2 { font-size: 1.15em; }
+.bot-reply-md h3 { font-size: 1.05em; }
+.bot-reply-md p { margin: 0.4em 0; }
+.bot-reply-md ul, .bot-reply-md ol {
+  margin: 0.4em 0;
+  padding-left: 1.6em;
+}
+.bot-reply-md li { margin: 0.15em 0; }
+.bot-reply-md code {
+  padding: 0.15em 0.4em;
+  font-size: 0.9em;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 3px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+.bot-reply-md pre {
+  margin: 0.5em 0;
+  padding: 0.8em;
+  overflow-x: auto;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
+}
+.bot-reply-md pre code {
+  padding: 0;
+  background: transparent;
+}
+.bot-reply-md blockquote {
+  margin: 0.5em 0;
+  padding: 0.3em 0.8em;
+  border-left: 3px solid rgba(0, 0, 0, 0.15);
+  color: rgba(0, 0, 0, 0.55);
+}
+.bot-reply-md table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+}
+.bot-reply-md th, .bot-reply-md td {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 0.3em 0.6em;
+  text-align: left;
+}
+.bot-reply-md th {
+  background: rgba(0, 0, 0, 0.04);
+  font-weight: 600;
+}
+.bot-reply-md a {
+  color: #3370ff;
+}
+.bot-reply-md hr {
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  margin: 0.6em 0;
+}
+
+/* Live2D 看板娘移到右侧 */
+#waifu {
+  left: auto !important;
+  right: 0;
+  z-index: 99999 !important;
+}
+#waifu-toggle {
+  left: auto !important;
+  right: 0;
+  margin-left: 0 !important;
+  margin-right: -100px;
+  justify-content: flex-start;
+  border-radius: 5px;
+  transition: margin-right 1s;
+  z-index: 99999 !important;
+}
+#waifu-toggle.waifu-toggle-active {
+  margin-left: 0 !important;
+  margin-right: -50px;
+}
+#waifu-toggle.waifu-toggle-active:hover {
+  margin-left: 0 !important;
+  margin-right: -30px;
+}
+#waifu-tool {
+  right: auto !important;
+  left: -30px;
+}

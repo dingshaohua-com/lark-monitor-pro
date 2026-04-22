@@ -1,0 +1,333 @@
+import { ArrowDownOutlined, ArrowUpOutlined, CheckCircleOutlined, DislikeOutlined, LikeOutlined, LineChartOutlined, MinusOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Card, DatePicker, Empty, Spin, theme } from 'antd';
+import dayjs from 'dayjs';
+import * as echarts from 'echarts';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { customAxiosInstance } from '@/api/api.base';
+
+const { RangePicker } = DatePicker;
+
+interface PeriodStats {
+  total: number;
+  bot_replied: number;
+  bot_processed: number;
+  correct_count: number;
+  incorrect_count: number;
+  problem_category_counts: Record<string, number>;
+}
+
+interface StatsData {
+  current: PeriodStats;
+  previous: PeriodStats;
+  period_days: number;
+}
+
+const fetchStats = (params: { start_date?: string; end_date?: string }) =>
+  customAxiosInstance<unknown>({ url: '/api/raw-msg/stats', method: 'GET', params }) as Promise<{ data: StatsData }>;
+
+function calcRate(numerator: number, denominator: number) {
+  if (denominator <= 0) return 0;
+  return Math.round((numerator / denominator) * 1000) / 10;
+}
+
+function useGauge(rate: number, color: string, bgColor: string) {
+  const ref = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    if (!chartRef.current) {
+      chartRef.current = echarts.init(ref.current);
+    }
+    chartRef.current.setOption({
+      series: [
+        {
+          type: 'gauge',
+          startAngle: 90,
+          endAngle: -270,
+          radius: '88%',
+          pointer: { show: false },
+          progress: {
+            show: true,
+            overlap: false,
+            roundCap: true,
+            clip: false,
+            width: 10,
+            itemStyle: { color },
+          },
+          axisLine: { lineStyle: { width: 10, color: [[1, bgColor]] } },
+          splitLine: { show: false },
+          axisTick: { show: false },
+          axisLabel: { show: false },
+          title: { show: false },
+          detail: {
+            fontSize: 26,
+            fontWeight: 700,
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+            color,
+            formatter: '{value}%',
+            offsetCenter: [0, '0%'],
+          },
+          data: [{ value: rate }],
+          animationDuration: 800,
+        },
+      ],
+    });
+  }, [rate, color, bgColor]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const ro = new ResizeObserver(() => chart.resize());
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+
+  return ref;
+}
+
+const CATEGORY_COLORS: Record<string, string> = {
+  '技术问题-转bug，元芳排查正确': '#f5222d',
+  '技术问题-转bug，元芳排查有误': '#fa541c',
+  '非技术问题-元芳排查正确': '#52c41a',
+  '非技术问题-元芳排查有误': '#a0d911',
+  '待人工确认': '#1890ff',
+  '重复反馈': '#faad14',
+};
+
+function usePie(data: { name: string; value: number }[]) {
+  const ref = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<echarts.ECharts | null>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    if (!chartRef.current) {
+      chartRef.current = echarts.init(ref.current);
+    }
+    chartRef.current.setOption({
+      tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+      legend: {
+        bottom: 0,
+        itemWidth: 12,
+        itemHeight: 12,
+        textStyle: { fontSize: 13 },
+        itemGap: 12,
+        padding: [4, 8],
+      },
+      series: [
+        {
+          type: 'pie',
+          radius: ['42%', '62%'],
+          center: ['50%', '38%'],
+          avoidLabelOverlap: true,
+          itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+          label: { show: true, formatter: '{d}%', fontSize: 12 },
+          labelLine: { length: 10, length2: 10 },
+          data: data.map((d) => ({ ...d, itemStyle: { color: CATEGORY_COLORS[d.name] ?? '#8c8c8c' } })),
+          animationDuration: 800,
+        },
+      ],
+    });
+  }, [data]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart) return;
+    const ro = new ResizeObserver(() => chart.resize());
+    if (ref.current) ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+
+  return ref;
+}
+
+interface MetricCardProps {
+  title: string;
+  icon: React.ReactNode;
+  rate: number;
+  prevRate: number;
+  subtitle: string;
+  color: string;
+  bgColor: string;
+}
+
+function MetricCard({ title, icon, rate, prevRate, subtitle, color, bgColor }: MetricCardProps) {
+  const { token } = theme.useToken();
+  const gaugeRef = useGauge(rate, color, bgColor);
+  const diff = Math.round((rate - prevRate) * 10) / 10;
+  const isUp = diff > 0;
+
+  return (
+    <Card
+      style={{ borderRadius: token.borderRadiusLG, height: '100%' }}
+      styles={{ body: { display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px 16px 20px' } }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 16, fontSize: 15, fontWeight: 600, color: token.colorTextHeading }}>
+        {icon}
+        <span>{title}</span>
+      </div>
+      <div ref={gaugeRef} style={{ width: '100%', maxWidth: 180, aspectRatio: '1' }} />
+      <div style={{ marginTop: 8, fontSize: 13, color: token.colorTextSecondary }}>{subtitle}</div>
+      <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
+        <span style={{ color: token.colorTextTertiary }}>较上周期</span>
+        {diff === 0 ? (
+          <span style={{ color: token.colorTextSecondary, display: 'inline-flex', alignItems: 'center', gap: 2 }}>
+            <MinusOutlined style={{ fontSize: 11 }} /> 持平
+          </span>
+        ) : (
+          <span
+            style={{
+              color: isUp ? (color === token.colorError ? token.colorError : token.colorSuccess) : (color === token.colorError ? token.colorSuccess : token.colorError),
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 2,
+              fontWeight: 600,
+            }}
+          >
+            {isUp ? <ArrowUpOutlined style={{ fontSize: 11 }} /> : <ArrowDownOutlined style={{ fontSize: 11 }} />}
+            {Math.abs(diff)}%
+          </span>
+        )}
+      </div>
+    </Card>
+  );
+}
+
+export default function Home() {
+  const { token } = theme.useToken();
+  const today = dayjs();
+  const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs]>([today.subtract(6, 'day'), today]);
+  const [loading, setLoading] = useState(false);
+  const [stats, setStats] = useState<StatsData | null>(null);
+
+  const load = useCallback(async (range: [dayjs.Dayjs, dayjs.Dayjs]) => {
+    setLoading(true);
+    try {
+      const res = await fetchStats({
+        start_date: range[0].format('YYYY-MM-DD'),
+        end_date: range[1].format('YYYY-MM-DD'),
+      });
+      setStats(res.data);
+    } catch {
+      /* handled by interceptor */
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // 默认不自动查询，用户点击查询按钮后触发
+
+  const emptyStats: PeriodStats = { total: 0, bot_replied: 0, bot_processed: 0, correct_count: 0, incorrect_count: 0, problem_category_counts: {} };
+  const cur = stats?.current ?? emptyStats;
+  const prev = stats?.previous ?? emptyStats;
+
+  const categoryData = Object.entries(cur.problem_category_counts ?? {}).map(([name, value]) => ({ name, value }));
+  const pieRef = usePie(stats ? categoryData : []);
+
+  const botReplyRate = calcRate(cur.bot_replied, cur.total);
+  const prevBotReplyRate = calcRate(prev.bot_replied, prev.total);
+
+  const botRate = calcRate(cur.bot_processed, cur.total);
+  const prevBotRate = calcRate(prev.bot_processed, prev.total);
+
+  const evaluated = cur.correct_count + cur.incorrect_count;
+  const prevEvaluated = prev.correct_count + prev.incorrect_count;
+  const correctRate = calcRate(cur.correct_count, evaluated);
+  const prevCorrectRate = calcRate(prev.correct_count, prevEvaluated);
+  const incorrectRate = calcRate(cur.incorrect_count, evaluated);
+  const prevIncorrectRate = calcRate(prev.incorrect_count, prevEvaluated);
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16, height: '100%', overflow: 'auto' }}>
+      <Card
+        size="small"
+        style={{ borderRadius: token.borderRadiusLG, flexShrink: 0 }}
+        styles={{ body: { display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px' } }}
+      >
+        <span style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap' }}>数据分析</span>
+        <RangePicker
+          size="small"
+          value={dateRange}
+          onChange={(v) => v && setDateRange(v as [dayjs.Dayjs, dayjs.Dayjs])}
+          style={{ maxWidth: 280 }}
+          allowClear={false}
+        />
+        <Button type="primary" size="small" icon={<SearchOutlined />} loading={loading} onClick={() => load(dateRange)}>
+          查询
+        </Button>
+        {stats && (
+          <span style={{ marginLeft: 'auto', color: token.colorTextTertiary, fontSize: 13 }}>
+            当前周期 {stats.period_days} 天 · 共 {cur.total} 条工单
+          </span>
+        )}
+      </Card>
+
+      {stats ? (
+        <Spin spinning={loading}>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <MetricCard
+                title="机器人参与率"
+                icon={<RobotOutlined style={{ color: token.colorPrimary }} />}
+                rate={botReplyRate}
+                prevRate={prevBotReplyRate}
+                subtitle={`${cur.bot_replied} / ${cur.total} 工单`}
+                color={token.colorPrimary}
+                bgColor={token.colorPrimaryBg}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <MetricCard
+                title="机器人处理率"
+                icon={<CheckCircleOutlined style={{ color: token.colorSuccess }} />}
+                rate={botRate}
+                prevRate={prevBotRate}
+                subtitle={`${cur.bot_processed} / ${cur.total} 工单`}
+                color={token.colorSuccess}
+                bgColor={token.colorSuccessBg}
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <MetricCard
+                title="回复正确率"
+                icon={<LikeOutlined style={{ color: '#52c41a' }} />}
+                rate={correctRate}
+                prevRate={prevCorrectRate}
+                subtitle={`${cur.correct_count} / ${evaluated} 已评估`}
+                color="#52c41a"
+                bgColor="#f6ffed"
+              />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <MetricCard
+                title="回复错误率"
+                icon={<DislikeOutlined style={{ color: '#ff4d4f' }} />}
+                rate={incorrectRate}
+                prevRate={prevIncorrectRate}
+                subtitle={`${cur.incorrect_count} / ${evaluated} 已评估`}
+                color="#ff4d4f"
+                bgColor="#fff2f0"
+              />
+            </div>
+          </div>
+          <Card
+            style={{ borderRadius: token.borderRadiusLG, marginTop: 16 }}
+            styles={{ body: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, padding: '20px 24px' } }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 600, color: token.colorTextHeading, textAlign: 'center', flexShrink: 0 }}>
+              问题分类分布
+            </div>
+            <div ref={pieRef} style={{ width: '100%', maxWidth: 520, height: 360 }} />
+          </Card>
+        </Spin>
+      ) : (
+        <Card style={{ borderRadius: token.borderRadiusLG, flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Empty
+            image={<LineChartOutlined style={{ fontSize: 48, color: token.colorTextQuaternary }} />}
+            description={<span style={{ color: token.colorTextTertiary }}>选择日期范围后点击「查询」查看分析数据</span>}
+          />
+        </Card>
+      )}
+    </div>
+  );
+}
