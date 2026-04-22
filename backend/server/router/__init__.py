@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 from . import root
-from . import lark_msg
+from . import message
 
 # 创建父路由，统一添加 /api 前缀
 router = APIRouter(prefix="/api")
@@ -11,4 +11,4 @@ async def api_handler():
 
 # 将所有子路由注册到父路由
 router.include_router(root.router)
-router.include_router(work_order.router)
+router.include_router(message.router)

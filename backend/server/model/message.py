@@ -1,8 +1,5 @@
 from sqlmodel import Field, SQLModel
 
-
 class Message(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
-    name: str
-    secret_name: str
-    age: int | None = None
+    content: str | None = None
