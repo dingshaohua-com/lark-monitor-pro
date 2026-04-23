@@ -3,9 +3,9 @@ import json
 import asyncio
 import lark_oapi as lark
 from datetime import date
+from lark_oapi.api.im.v1 import ListMessageRequest
 from server.utils.date_helper import get_full_date_time
 
-ListMessageRequest = lark.api.im.v1
 _client: lark.Client | None = None
 
 def init_lark_client():
@@ -26,7 +26,7 @@ def get_lark_client() -> lark.Client:
 
 
 
-async def fetch_msgs(client, container_type: str, container_id: str, start, end, callback, parent_doc=None):
+async def fetch_msgs(client, container_type: str, container_id: str, start, end, callback, parent_node=None):
     """自动循环获取指定日期的所有数据（官方给的数据分页不是常规的totol、pagesize之类的，而是是否有下一页 page_token来决定是否有下页）"""
     print(container_type, container_id)
     page_token: str | None = None
@@ -58,14 +58,14 @@ async def fetch_msgs(client, container_type: str, container_id: str, start, end,
         is_last = not response.data.has_more
 
         # 给外部使用: 通知本次拉取完成
-        items_dic = [json.loads(lark.JSON.marshal(item)) for item in items]
+        _items = [json.loads(lark.JSON.marshal(item)) for item in items]
 
         if callback:
-            result = callback(items_dic, items, is_last, parent_doc=parent_doc)
+            result = callback(_items, parent_node=parent_node)
             if asyncio.iscoroutine(result):
                 await result
 
-        all_items.extend(items_dic)
+        all_items.extend(_items)
 
         # 终止条件
         if is_last:
@@ -78,23 +78,40 @@ async def fetch_msgs(client, container_type: str, container_id: str, start, end,
     return all_items
 
 
-
-async def get_msgs(start: date | None = None, end: date | None = None, callback=None) :
-    """从飞书群拉取原始消息（含话题回复）同步到表"""
+# 之前的版本是“全部主消息 -> 全部回复”，现在的版本是“主消息 P1 -> P1 回复 -> 主消息 P2...”
+async def get_msgs(start: date | None = None, end: date | None = None, callback=None):
     client = get_lark_client()
     start, end = get_full_date_time(start, end, timestamp=True)
-
-    # 第一步：拉取群聊主消息（即话题）并入库
     chat_id = os.environ["MONITOR_CHAT_ID"]
-    chat_items = await fetch_msgs(client,"chat", chat_id, start, end, callback)
 
-    # 第二步：对有 thread_id 的消息，拉取话题内的回复
-    for msg in chat_items:
-        thread_id = msg.get("thread_id")
-         # 跳过主消息（通过 ID 比对或层级判断）
-        if thread_id == msg.get("message_id"):
-            continue
-        if thread_id:
-            thread_items = await fetch_msgs(client,"thread", thread_id, start, end, callback, parent_doc=msg) # 表明这里是回复类型的消息，把主消息传进去，方便添加是否有机器人回复用
-            msg['replies']=thread_items
-    return chat_items
+    # 定义全量容器
+    all_chat_items = []
+
+    # 定义内部处理器：负责处理每一页主消息（与 fetch_msgs 的 callback(_items, parent_node=...) 对齐）
+    async def main_msg_processor(items_dic, parent_node=None):
+        # 1. 执行入库回调（分批入库，保证数据库安全）
+        if callback:
+            result = callback(items_dic, parent_node=parent_node)
+            if asyncio.iscoroutine(result):
+                await result
+
+        # 2. 将这一页主消息塞进全量容器
+        all_chat_items.extend(items_dic)
+
+        # 3. 立即处理这页消息的回复
+        for msg in items_dic:
+            thread_id = msg.get("thread_id")
+            if thread_id and thread_id != msg.get("message_id"):
+                # 拉取回复：同样触发 callback 入库
+                # 注意：这里我们把回复存入主消息对象的 'replies' 字段中
+                replies = await fetch_msgs(
+                    client, "thread", thread_id, start, end,
+                    callback, parent_node=msg
+                )
+                msg['replies'] = replies
+
+    # 启动同步：fetch_msgs 内部会不断调用 main_msg_processor
+    await fetch_msgs(client, "chat", chat_id, start, end, main_msg_processor)
+
+    # 最后大功告成，返回这个可能“撑爆”内存的巨无霸列表
+    return all_chat_items

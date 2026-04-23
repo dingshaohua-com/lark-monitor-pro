@@ -5,7 +5,4 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type StatsApiRawMsgStatsGetParams = {
-start_date?: string | null;
-end_date?: string | null;
-};
+export type MessageRawData = { [key: string]: unknown };

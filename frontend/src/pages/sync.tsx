@@ -2,7 +2,7 @@ import { CalendarOutlined, DatabaseOutlined, DeleteOutlined, FileSearchOutlined,
 import { Alert, Button, Card, DatePicker, Modal, Radio, Space, Spin, Tag, theme } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
-import * as rawMsgApi from "@/api/endpoints/raw-msg"
+import * as rawMsgApi from "@/api/endpoints/work-order"
 import { customAxiosInstance } from '@/api/api.base';
 
 
@@ -133,7 +133,7 @@ export default function Sync() {
         _params.start = dateRange[0].format('YYYY-MM-DD');
         _params.end = dateRange[1].format('YYYY-MM-DD');
       }
-      await rawMsgApi.syncApiRawMsgSyncPost(undefined, {data:_params});
+      await rawMsgApi.syncApiMessageSyncPost(undefined, {data:_params});
       syncTask.done();
       fetchStatus();
     } catch (e: unknown) {
@@ -152,7 +152,7 @@ export default function Sync() {
       onOk: async () => {
         setClearing(true);
         try {
-          await rawMsgApi.clearAllApiRawMsgAllDelete();
+          // await rawMsgApi.clearAllApiRawMsgAllDelete();
           fetchStatus();
         } finally {
           setClearing(false);

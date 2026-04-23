@@ -4,10 +4,6 @@
  * FastAPI
  * OpenAPI spec version: 0.1.0
  */
-import type {
-  GetMsgsApiLarkMsgGetParams
-} from '../model';
-
 import { customAxiosInstance } from '../api.base';
 
 
@@ -16,15 +12,14 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
   /**
- * @summary Get Msgs
+ * @summary Api Handler
  */
-export const getMsgsApiLarkMsgGet = (
-    params?: GetMsgsApiLarkMsgGetParams,
+export const apiHandlerApiGet = (
+    
  options?: SecondParameter<typeof customAxiosInstance<unknown>>,) => {
       return customAxiosInstance<unknown>(
-      {url: `/api/lark-msg/`, method: 'GET',
-        params
+      {url: `/api`, method: 'GET'
     },
       options);
     }
-  export type GetMsgsApiLarkMsgGetResult = NonNullable<Awaited<ReturnType<typeof getMsgsApiLarkMsgGet>>>
+  

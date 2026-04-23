@@ -12,14 +12,14 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
   /**
- * @summary Root
+ * @summary Home
  */
-export const rootApiGet = (
+export const homeApiHomeGet = (
     
  options?: SecondParameter<typeof customAxiosInstance<unknown>>,) => {
       return customAxiosInstance<unknown>(
-      {url: `/api/`, method: 'GET'
+      {url: `/api/home`, method: 'GET'
     },
       options);
     }
-  export type RootApiGetResult = NonNullable<Awaited<ReturnType<typeof rootApiGet>>>
+  export type HomeApiHomeGetResult = NonNullable<Awaited<ReturnType<typeof homeApiHomeGet>>>

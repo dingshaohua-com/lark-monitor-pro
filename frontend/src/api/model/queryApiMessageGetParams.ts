@@ -5,7 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GetMsgsApiLarkMsgGetParams = {
-start?: string | null;
-end?: string | null;
+export type QueryApiMessageGetParams = {
+id?: string | null;
 };

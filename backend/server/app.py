@@ -1,4 +1,7 @@
 from dotenv import load_dotenv
+
+from server.utils.lark_oapi_helper import init_lark_client
+
 load_dotenv() # 加载环境变量，一定要放到最前方
 from fastapi import FastAPI
 from server.router import router
@@ -12,6 +15,7 @@ from server.utils.db_helper import lark_monitor_db
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 【启动阶段】
+    init_lark_client()
     lark_monitor_db.open() # 开启 Lark 库连接池
     print("🚀 PgSQL 连接池已就绪")
 
