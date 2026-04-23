@@ -6,5 +6,7 @@
  */
 
 export type QueryApiMessageGetParams = {
-id?: string | null;
+  id?: string | null;
+  /** 为 true 时同时返回主消息下 raw_data.parent_id 对应主消息 id 的回复 */
+  withReply?: boolean;
 };

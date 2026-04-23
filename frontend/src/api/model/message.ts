@@ -4,10 +4,12 @@
  * FastAPI
  * OpenAPI spec version: 0.1.0
  */
+import type { MessageParsedData } from './messageParsedData';
 import type { MessageRawData } from './messageRawData';
 
 export interface Message {
   id: string;
-  content?: string | null;
+  type?: string | null;
+  parsed_data?: MessageParsedData;
   raw_data?: MessageRawData;
 }

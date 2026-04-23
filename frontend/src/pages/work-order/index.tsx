@@ -3,7 +3,7 @@ import { useTableScrolly } from '@/components/use-table-scrolly';
 import { Button, Card, Col, DatePicker, Form, Input, Pagination, Row, Select, Table, Tag, Tooltip, theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
-import { getDictApiDictDetailGet } from '@/api/endpoints/dict';
+// import { getDictApiDictDetailGet } from '@/api/endpoints/dict';
 import { getAllApiRawMsgGet, getRepliesApiRawMsgMessageIdRepliesGet } from '@/api/endpoints/raw-msg';
 import type { ReplyListResponse, WorkOrderListResponse } from './types';
 import type { MessageItem, WorkOrderDict, WorkOrderQuery } from './types';
@@ -43,10 +43,10 @@ export default function WorkOrder() {
     return filters;
   };
 
-  const fetchDict = useCallback(async () => {
-    const data = await getDictApiDictDetailGet({ name: 'work_order_map' });
-    setWorkOrderDict((data ?? {}) as WorkOrderDict);
-  }, []);
+  // const fetchDict = useCallback(async () => {
+  //   const data = await getDictApiDictDetailGet({ name: 'work_order_map' });
+  //   setWorkOrderDict((data ?? {}) as WorkOrderDict);
+  // }, []);
 
   const fetchData = useCallback(async (p: number, size: number, filters: WorkOrderQuery = {}) => {
     setLoading(true);
@@ -63,7 +63,7 @@ export default function WorkOrder() {
   }, []);
 
   useEffect(() => {
-    fetchDict();
+    // fetchDict();
     fetchData(1, pageSize);
   }, [fetchData, fetchDict]);
 

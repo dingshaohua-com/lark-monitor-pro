@@ -3,18 +3,21 @@ import server.service.message as message_service
 from server.model.message import Message
 from server.schema.common import SyncRequest
 from server.utils.db_helper import lark_monitor_db, AsyncSession
-from fastapi import APIRouter, Body, Depends
+from fastapi import APIRouter, Body, Depends, Query
 
 
 
 router = APIRouter(prefix="/message", tags=["work-order"])
 
 @router.get("")
-async def query( session: AsyncSession = Depends(lark_monitor_db.get_session), id: str | None = None)->Message|List[Message]:
+async def query(
+    session: AsyncSession = Depends(lark_monitor_db.get_session),
+    id: str | None = None,
+    withReply: bool = Query(default=False, description="为 true 时同时返回主消息下 raw_data.parent_id 指向主消息 id 的回复"),
+) -> Message | list[Message]:
     if id is not None:
         return await message_service.get_one(session, id)
-    else:
-        return await message_service.get_all(session)
+    return await message_service.get_list(session, with_reply=withReply)
 
 
 @router.post("/sync")
