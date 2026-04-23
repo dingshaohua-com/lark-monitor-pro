@@ -1,6 +1,8 @@
 import re
 import json
+from sqlmodel import select
 from server.model.message import Message
+from server.model.bot_reply import BotReply
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.postgresql import insert
 
@@ -87,6 +89,20 @@ async def sync_table_helper(session: AsyncSession, items,  parent_node ):
     if not items:
         return
 
+    # 0. 批量预查 bot_reply：本批次所有"工单主消息"的 id 收集起来，
+    #    一次性按 ticketId 查出对应的机器人排查结果，避免循环里逐条 SQL。
+    thread_ids = [
+        item.get("message_id")
+        for item in items
+        if not item.get("parent_id")  # 没有 parent_id 即为主消息（工单）
+    ]
+    bot_reply_map: dict[str, BotReply] = {}
+    if thread_ids:
+        stmt = select(BotReply).where(BotReply.ticket_id.in_(thread_ids))
+        result = await session.exec(stmt)
+        for br in result.all():
+            bot_reply_map[br.ticket_id] = br
+
     # 1. 准备批量数据列表（不直接 add，而是先准备数据）
     data_to_sync=[]
     for item in items:
@@ -99,18 +115,22 @@ async def sync_table_helper(session: AsyncSession, items,  parent_node ):
             },
         }
 
+        isRotSender = item.get("sender").get('sender_type') == "app" # 是否机器人发的消息
+
         if bool(item.get("parent_id")): # 如果是回复
-            message["type"] = "reply"
-            # todo: 如果是回复
-        else: # 如果是主消息
+            if isRotSender:
+                message["type"] = "reply_by_robot"
+            else:
+                message["type"] = "reply_by_user"
+        else: # 如果是主消息（工单）
             message["type"] = "thread"
-            isRotSender = item.get("sender").get('sender_type') == "app"
             if isRotSender:  # 如果是机器人发送的
                 raw_text = parse_body_content.get("elements")[0][0].get("text")
                 parsedContent = convert_work_order_content(raw_text)
                 message["parsed_data"]["body_content_field"] = parsedContent
-
-
+            # 给工单附加机器人排查结果（来自 bot_reply 表）
+            bot_reply = bot_reply_map.get(message["id"])
+            message["parsed_data"]["bot_analysis"] = bot_reply.content if bot_reply else None
 
         data_to_sync.append(message)
 
