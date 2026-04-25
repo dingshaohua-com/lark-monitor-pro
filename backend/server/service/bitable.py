@@ -1,15 +1,26 @@
-"""值班表 / 问题原因表：从飞书多维表格同步到 PG，并提供查询"""
+"""值班表 / 问题原因表：从飞书多维表格同步到 PG，并提供查询；
+工单批量上传到飞书多维表格"""
+import json
 import logging
 import re
 from datetime import date
 
+import httpx
+from sqlalchemy import BigInteger
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 
+from server.exception.biz_error import BizError
+from server.model.bot_reply import BotReply
 from server.model.duty_schedule import DutySchedule
+from server.model.message import Message
 from server.model.qa_tracking import QaTracking
+from server.utils.date_helper import get_date_range_epoch_ms
 from server.utils.db_helper import AsyncSession
-from server.utils.lark_bitable_helper import list_bitable_records
+from server.utils.lark_bitable_helper import (
+    get_tenant_access_token,
+    list_bitable_records,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +29,9 @@ DUTY_TABLE_ID = "tblwel6L7Yk9NUpU"
 
 QA_TRACKING_APP_TOKEN = "QNstwKyaNihYv2kKcY4c2RZdn6d"
 QA_TRACKING_TABLE_ID = "tblMSns5snZtf14F"
+
+UPLOAD_DEFAULT_APP_TOKEN = "Sywxb4dh8aeRZJsvD3WcDiXDnnc"
+UPLOAD_DEFAULT_TABLE_ID = "tblt7L2vgw70yE3F"
 
 _FEEDBACK_ID_RE = re.compile(r"【反馈ID】[：:]\s*(\S+)")
 
@@ -129,3 +143,242 @@ async def sync_qa_tracking_to_pg(session: AsyncSession) -> int:
 
     logger.info("问题原因表已同步 %d 条", len(records))
     return len(records)
+
+
+# ─── 工单上传 ───────────────────────────────────────────
+
+
+# 多维表格"状态"字段映射：bot_reply.problem_category 前缀 → 状态
+_STATUS_PREFIX_MAP: list[tuple[str, str]] = [
+    ("技术问题", "技术"),
+    ("非技术问题", "非技术"),
+]
+
+
+def _classify_status(bot_reply: BotReply | None) -> str:
+    pc = (bot_reply.problem_category or "") if bot_reply else ""
+    for prefix, label in _STATUS_PREFIX_MAP:
+        if pc.startswith(prefix):
+            return label
+    return "待定"
+
+
+def _extract_elements_text(elements: list) -> str:
+    """飞书 post / interactive 卡片 elements 数组提取纯文本"""
+    lines: list[str] = []
+    for row in elements:
+        if not isinstance(row, list):
+            continue
+        pieces: list[str] = []
+        for el in row:
+            if not isinstance(el, dict):
+                continue
+            tag = el.get("tag")
+            if tag in ("text", "a"):
+                pieces.append(str(el.get("text") or ""))
+            elif tag == "at":
+                pieces.append(f"@{el.get('user_name') or '用户'}")
+        joined = "".join(pieces).strip()
+        if joined:
+            lines.append(joined)
+    return "\n".join(lines)
+
+
+def _prepend_mention_keys(reply: Message, text: str) -> str:
+    """飞书纯文本里 @ 可能只在 raw_data.mentions 数组里出现，正文未带就补上"""
+    text = (text or "").strip()
+    raw = reply.raw_data if isinstance(reply.raw_data, dict) else {}
+    mentions = raw.get("mentions")
+    if not isinstance(mentions, list) or not mentions:
+        return text
+    keys: list[str] = []
+    for m in mentions:
+        if isinstance(m, dict):
+            k = (m.get("key") or "").strip()
+            if k and k not in keys:
+                keys.append(k)
+    if not keys:
+        return text
+    if not text:
+        return "\n".join(keys)
+    if any(k in text for k in keys):
+        return text
+    return "\n".join(keys) + "\n" + text
+
+
+def _extract_reply_text(reply: Message) -> str:
+    """从单条回复 raw_data 中提取纯文本，自动跳过"自动排查单"机器人卡片"""
+    raw = reply.raw_data if isinstance(reply.raw_data, dict) else {}
+    msg_type = raw.get("msg_type")
+    body = raw.get("body") or {}
+    content_raw = body.get("content")
+
+    parsed: dict | str | None = None
+    if isinstance(content_raw, str):
+        s = content_raw.strip()
+        if not s:
+            return ""
+        try:
+            parsed = json.loads(s)
+        except json.JSONDecodeError:
+            parsed = s
+    elif isinstance(content_raw, dict):
+        parsed = content_raw
+
+    # 纯文本消息
+    if msg_type == "text":
+        if isinstance(parsed, dict):
+            return _prepend_mention_keys(reply, str(parsed.get("text") or ""))
+        if isinstance(parsed, str):
+            return _prepend_mention_keys(reply, parsed)
+        return ""
+
+    # post / interactive 卡片
+    if isinstance(parsed, dict):
+        title = str(parsed.get("title") or "").strip()
+        if title.startswith("自动排查单"):
+            return ""
+        parts: list[str] = []
+        if title:
+            parts.append(title)
+        elements = parsed.get("elements") or parsed.get("content")
+        if isinstance(elements, list):
+            t = _extract_elements_text(elements)
+            if t:
+                parts.append(t)
+        return _prepend_mention_keys(reply, "\n".join(parts).strip())
+
+    return ""
+
+
+def _resolve_record_date_ms(thread: Message) -> int | None:
+    """工单"日期"列取值：直接使用 raw_data.create_time（飞书消息的毫秒戳）"""
+    raw = thread.raw_data if isinstance(thread.raw_data, dict) else {}
+    ct = raw.get("create_time")
+    if ct is None:
+        return None
+    try:
+        return int(ct)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_record_fields(
+    thread: Message,
+    replies: list[Message],
+    bot_reply: BotReply | None,
+) -> dict:
+    """主消息 + 回复 + bot_reply → 多维表格字段。
+    "日期"列严格使用每条工单自身的真实反馈日期，不再支持外部 report_date 覆盖。
+    """
+    parsed = thread.parsed_data if isinstance(thread.parsed_data, dict) else {}
+    content = parsed.get("content") if isinstance(parsed, dict) else None
+    content = content if isinstance(content, dict) else {}
+
+    feedback_id = str(content.get("feedback_id") or thread.id)
+    user_content = str(content.get("user_content") or "")
+    client_type = str(content.get("client_type") or "无法判断") or "无法判断"
+
+    reply_texts = [_extract_reply_text(r) for r in replies]
+    reply_content = "\n---\n".join(t for t in reply_texts if t)
+
+    fields: dict = {
+        "反馈 ID": feedback_id,
+        "反馈原文": user_content,
+        "回复内容": reply_content,
+        "状态": _classify_status(bot_reply),
+        "客户端": client_type,
+    }
+
+    record_date_ms = _resolve_record_date_ms(thread)
+    if record_date_ms is not None:
+        fields["日期"] = record_date_ms
+
+    return fields
+
+
+async def upload_feedbacks(
+    session: AsyncSession,
+    start_date: str | None,
+    end_date: str | None,
+    app_token: str,
+    table_id: str,
+) -> dict:
+    """将指定日期范围内的工单批量上传到飞书多维表格。
+    多维表格中"日期"列使用每条工单自身的真实反馈日期。
+    """
+    token = await get_tenant_access_token()
+    if not token:
+        raise BizError("无法获取飞书访问令牌，请检查 LARK_APP_ID / LARK_APP_SECRET 配置")
+
+    base_where = col(Message.type) == "thread"
+    start_ms, end_ms = get_date_range_epoch_ms(start_date, end_date)
+    if start_ms is not None or end_ms is not None:
+        ct_ms = col(Message.raw_data)["create_time"].astext.cast(BigInteger)
+        if start_ms is not None:
+            base_where = base_where & (ct_ms >= start_ms)
+        if end_ms is not None:
+            base_where = base_where & (ct_ms <= end_ms)
+
+    threads_result = await session.exec(
+        select(Message).where(base_where).order_by(col(Message.id))
+    )
+    threads = list(threads_result.all())
+
+    if not threads:
+        return {"total": 0, "uploaded": 0, "failed": 0, "errors": []}
+
+    main_ids = [t.id for t in threads]
+
+    rep_parent = col(Message.raw_data)["parent_id"].astext
+    replies_result = await session.exec(
+        select(Message)
+        .where(rep_parent.in_(main_ids))
+        .order_by(rep_parent, col(Message.id))
+    )
+    reply_map: dict[str, list[Message]] = {}
+    for r in replies_result.all():
+        pid = (r.raw_data or {}).get("parent_id") if isinstance(r.raw_data, dict) else None
+        if isinstance(pid, str):
+            reply_map.setdefault(pid, []).append(r)
+
+    bot_reply_result = await session.exec(
+        select(BotReply).where(col(BotReply.ticket_id).in_(main_ids))
+    )
+    bot_reply_map = {br.ticket_id: br for br in bot_reply_result.all()}
+
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+    }
+
+    total = len(threads)
+    uploaded = 0
+    failed = 0
+    errors: list[str] = []
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        for thread in threads:
+            replies = reply_map.get(thread.id, [])
+            br = bot_reply_map.get(thread.id)
+            fields = _build_record_fields(thread, replies, br)
+            feedback_id = fields.get("反馈 ID", "unknown")
+            try:
+                res = await client.post(url, headers=headers, json={"fields": fields})
+                data = res.json()
+                if data.get("code") == 0:
+                    uploaded += 1
+                else:
+                    failed += 1
+                    errors.append(
+                        f"反馈ID {feedback_id}: {data.get('msg', 'Unknown error')}"
+                    )
+            except Exception as e:
+                failed += 1
+                errors.append(f"反馈ID {feedback_id}: {e}")
+
+    logger.info(
+        "工单上传完成 total=%s uploaded=%s failed=%s", total, uploaded, failed
+    )
+    return {"total": total, "uploaded": uploaded, "failed": failed, "errors": errors}

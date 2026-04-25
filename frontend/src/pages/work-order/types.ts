@@ -66,6 +66,9 @@ export type ReplyCardElement =
 
 export type ReplyContent = ReplyCardContent | ReplyTextContent | Record<string, unknown>;
 
+/** 主消息 parsed_data.qa_tracking（来源：qa_tracking.raw_data 整对象，键是飞书表中文列名） */
+export type QaTracking = Record<string, string>;
+
 /** 主消息 parsed_data.bot_processed（来源：bot_reply 表） */
 export interface BotProcessed {
   id: string;

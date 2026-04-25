@@ -28,11 +28,11 @@ export const routes: AppRoute[] = [
     meta: { title: '数据分析', icon: <FundViewOutlined /> },
     Component: lazy(() => import('@/pages/home')),
   },
-  {
-    path: 'lark-msg',
-    meta: { title: '飞书消息', icon: <IconFont type="icon-feishu" /> },
-    Component: lazy(() => import('@/pages/lark-msg')),
-  },
+  // {
+  //   path: 'lark-msg',
+  //   meta: { title: '飞书消息', icon: <IconFont type="icon-feishu" /> },
+  //   Component: lazy(() => import('@/pages/lark-msg')),
+  // },
   {
     path: 'work-order',
     meta: { title: '工单列表', icon: <ReadOutlined /> },
@@ -45,7 +45,7 @@ export const routes: AppRoute[] = [
   },
   {
     path: 'qa-tracking',
-    meta: { title: '问题原因表', icon: <FileSearchOutlined /> },
+    meta: { title: '问题原因', icon: <FileSearchOutlined /> },
     Component: lazy(() => import('@/pages/qa-tracking')),
   },
   {

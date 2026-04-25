@@ -1,4 +1,4 @@
-import { ArrowDownOutlined, ArrowUpOutlined, CheckCircleOutlined, DislikeOutlined, LikeOutlined, LineChartOutlined, MinusOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons';
+import { ArrowDownOutlined, ArrowUpOutlined, DislikeOutlined, LikeOutlined, LineChartOutlined, MinusOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Card, DatePicker, Empty, Spin, theme } from 'antd';
 import dayjs from 'dayjs';
 import * as echarts from 'echarts';
@@ -9,7 +9,6 @@ const { RangePicker } = DatePicker;
 
 interface PeriodStats {
   total: number;
-  bot_replied: number;
   bot_processed: number;
   correct_count: number;
   incorrect_count: number;
@@ -23,7 +22,7 @@ interface StatsData {
 }
 
 const fetchStats = (params: { start_date?: string; end_date?: string }) =>
-  customAxiosInstance<unknown>({ url: '/api/raw-msg/stats', method: 'GET', params }) as Promise<{ data: StatsData }>;
+  customAxiosInstance<{ data: StatsData }>({ url: '/api/message/stats', method: 'GET', params });
 
 function calcRate(numerator: number, denominator: number) {
   if (denominator <= 0) return 0;
@@ -207,7 +206,7 @@ export default function Home() {
         start_date: range[0].format('YYYY-MM-DD'),
         end_date: range[1].format('YYYY-MM-DD'),
       });
-      setStats(res.data);
+      setStats(res);
     } catch {
       /* handled by interceptor */
     } finally {
@@ -217,15 +216,12 @@ export default function Home() {
 
   // 默认不自动查询，用户点击查询按钮后触发
 
-  const emptyStats: PeriodStats = { total: 0, bot_replied: 0, bot_processed: 0, correct_count: 0, incorrect_count: 0, problem_category_counts: {} };
+  const emptyStats: PeriodStats = { total: 0, bot_processed: 0, correct_count: 0, incorrect_count: 0, problem_category_counts: {} };
   const cur = stats?.current ?? emptyStats;
   const prev = stats?.previous ?? emptyStats;
 
   const categoryData = Object.entries(cur.problem_category_counts ?? {}).map(([name, value]) => ({ name, value }));
   const pieRef = usePie(stats ? categoryData : []);
-
-  const botReplyRate = calcRate(cur.bot_replied, cur.total);
-  const prevBotReplyRate = calcRate(prev.bot_replied, prev.total);
 
   const botRate = calcRate(cur.bot_processed, cur.total);
   const prevBotRate = calcRate(prev.bot_processed, prev.total);
@@ -267,24 +263,13 @@ export default function Home() {
           <div style={{ display: 'flex', gap: 16 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <MetricCard
-                title="机器人参与率"
-                icon={<RobotOutlined style={{ color: token.colorPrimary }} />}
-                rate={botReplyRate}
-                prevRate={prevBotReplyRate}
-                subtitle={`${cur.bot_replied} / ${cur.total} 工单`}
-                color={token.colorPrimary}
-                bgColor={token.colorPrimaryBg}
-              />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <MetricCard
                 title="机器人处理率"
-                icon={<CheckCircleOutlined style={{ color: token.colorSuccess }} />}
+                icon={<RobotOutlined style={{ color: token.colorPrimary }} />}
                 rate={botRate}
                 prevRate={prevBotRate}
                 subtitle={`${cur.bot_processed} / ${cur.total} 工单`}
-                color={token.colorSuccess}
-                bgColor={token.colorSuccessBg}
+                color={token.colorPrimary}
+                bgColor={token.colorPrimaryBg}
               />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>

@@ -17,11 +17,9 @@ withReply?: boolean;
  */
 page?: number;
 /**
- * 每页条数（仅列表查询有效）
- * @minimum 1
- * @maximum 200
+ * 每页条数。不传则不分页，返回全部（导出场景用）
  */
-pageSize?: number;
+pageSize?: number | null;
 /**
  * 按用户原文模糊搜索（仅列表查询有效）
  */
@@ -42,4 +40,12 @@ endDate?: string | null;
  * 机器人是否处理过：yes / no
  */
 hasBotProcessed?: string | null;
+/**
+ * 按值班人模糊匹配（关联 duty_schedule 表）
+ */
+dutyUser?: string | null;
+/**
+ * 问题原因是否已跟进：yes / no
+ */
+hasQaTracking?: string | null;
 };

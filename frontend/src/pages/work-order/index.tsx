@@ -1,14 +1,20 @@
 import { EyeOutlined, ReloadOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons';
-import { Button, Card, Col, DatePicker, Form, Input, Pagination, Row, Select, Table, Tag, theme } from 'antd';
+import { Button, Card, Col, DatePicker, Form, Input, Pagination, Row, Select, Table, Tag, Tooltip, theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTableScrolly } from '@/components/use-table-scrolly';
 import { queryApiMessageGet } from '@/api/endpoints/work-order';
-import type { Message, PageMessage } from '@/api/model';
+import type { Message, MessageWithReplies, PageMessage } from '@/api/model';
 import { PRIORITY_COLOR, problemCategoryOptions } from './constants';
 import { DetailModal } from './detail-modal';
-import { formatFeedbackTime, getBotProcessed, getThreadContent } from './utils';
+import {
+  formatFeedbackTime,
+  getBotProcessed,
+  getDutyUser,
+  getQaTrackingReason,
+  getThreadContent,
+} from './utils';
 
 const { RangePicker } = DatePicker;
 
@@ -19,6 +25,8 @@ interface WorkOrderFilters {
   startDate?: string;
   endDate?: string;
   hasBotProcessed?: string;
+  dutyUser?: string;
+  hasQaTracking?: string;
 }
 
 export default function WorkOrder() {
@@ -31,7 +39,7 @@ export default function WorkOrder() {
   const [pageSize, setPageSize] = useState(20);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailMessages, setDetailMessages] = useState<Message[]>([]);
+  const [detailMessage, setDetailMessage] = useState<MessageWithReplies | null>(null);
   const { ref: tableWrapRef, scrollY } = useTableScrolly();
 
   const fetchData = useCallback(
@@ -61,6 +69,8 @@ export default function WorkOrder() {
             startDate: filters.startDate || undefined,
             endDate: filters.endDate || undefined,
             hasBotProcessed: filters.hasBotProcessed || undefined,
+            dutyUser: filters.dutyUser || undefined,
+            hasQaTracking: filters.hasQaTracking || undefined,
           })) as PageMessage;
           setItems(data?.items ?? []);
           setTotal(data?.total ?? 0);
@@ -89,6 +99,9 @@ export default function WorkOrder() {
       endDate: dateRange?.[1]?.format('YYYY-MM-DD') || undefined,
       hasBotProcessed:
         (form.getFieldValue('has_bot_processed') as string | undefined) || undefined,
+      dutyUser: (form.getFieldValue('duty_user') as string | undefined)?.trim() || undefined,
+      hasQaTracking:
+        (form.getFieldValue('has_qa_tracking') as string | undefined) || undefined,
     };
   };
 
@@ -107,12 +120,13 @@ export default function WorkOrder() {
 
   const openDetail = async (msg: Message) => {
     setDetailOpen(true);
-    setDetailMessages([msg]);
+    setDetailMessage(msg);
     setDetailLoading(true);
     try {
-      const data = (await queryApiMessageGet({ id: msg.id, withReply: true })) as Message | Message[];
-      const list = Array.isArray(data) ? data : data ? [data] : [];
-      setDetailMessages(list);
+      const data = (await queryApiMessageGet({ id: msg.id, withReply: true })) as
+        | MessageWithReplies
+        | null;
+      setDetailMessage(data ?? (msg as MessageWithReplies));
     } finally {
       setDetailLoading(false);
     }
@@ -121,7 +135,7 @@ export default function WorkOrder() {
   const columns: ColumnsType<Message> = [
     {
       title: '优先级',
-      width: 80,
+      width: 60,
       align: 'center',
       render: (_, record) => {
         const priority = getThreadContent(record).priority;
@@ -131,7 +145,7 @@ export default function WorkOrder() {
     },
     {
       title: '用户原文',
-      width: 260,
+      width: 100,
       ellipsis: true,
       render: (_, record) => getThreadContent(record).user_content || '-',
     },
@@ -147,19 +161,41 @@ export default function WorkOrder() {
     // },
     {
       title: '客户端',
-      width: 120,
+      width: 80,
       ellipsis: true,
       render: (_, record) => getThreadContent(record).client_type || '-',
     },
     {
       title: '反馈时间',
-      width: 180,
+      width: 100,
       render: (_, record) => formatFeedbackTime(record),
     },
-   
+    {
+      title: '值班人',
+      width: 60,
+      ellipsis: true,
+      render: (_, record) => {
+        const u = getDutyUser(record);
+        return u ? u : <span style={{ color: token.colorTextQuaternary }}>-</span>;
+      },
+    },
+    {
+      title: '问题原因',
+      width: 60,
+      ellipsis: true,
+      render: (_, record) => {
+        const reason = getQaTrackingReason(record);
+        if (!reason) return <span style={{ color: token.colorTextQuaternary }}>-</span>;
+        return (
+          <Tooltip title={reason} placement="topLeft">
+            <span>{reason}</span>
+          </Tooltip>
+        );
+      },
+    },
     {
       title: '机器人处理',
-      width: 100,
+      width: 60,
       align: 'center',
       render: (_, record) =>
         getBotProcessed(record) ? (
@@ -170,7 +206,7 @@ export default function WorkOrder() {
     },
     {
       title: '问题分类',
-      width: 150,
+      width: 100,
       ellipsis: true,
       render: (_, record) => {
         const c = getBotProcessed(record)?.problem_category;
@@ -238,6 +274,23 @@ export default function WorkOrder() {
                 />
               </Form.Item>
             </Col>
+            <Col span={8}>
+              <Form.Item name="duty_user" label="值班人" style={{ marginBottom: 0 }}>
+                <Input placeholder="按值班人模糊匹配" allowClear />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="has_qa_tracking" label="问题原因" style={{ marginBottom: 0 }}>
+                <Select
+                  placeholder="全部"
+                  allowClear
+                  options={[
+                    { label: '已跟进', value: 'yes' },
+                    { label: '未跟进', value: 'no' },
+                  ]}
+                />
+              </Form.Item>
+            </Col>
             <Col span={24} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <Button icon={<ReloadOutlined />} onClick={onReset}>重置</Button>
               <Button icon={<SearchOutlined />} type="primary" htmlType="submit">查询</Button>
@@ -275,7 +328,7 @@ export default function WorkOrder() {
             dataSource={items}
             loading={loading}
             tableLayout="fixed"
-            scroll={{ x: 1200, y: scrollY }}
+            scroll={{ x: 1500, y: scrollY }}
             pagination={false}
           />
         </div>
@@ -296,7 +349,7 @@ export default function WorkOrder() {
       <DetailModal
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
-        messages={detailMessages}
+        message={detailMessage}
         loading={detailLoading}
       />
     </div>

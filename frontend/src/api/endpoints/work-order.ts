@@ -6,8 +6,11 @@
  */
 import type {
   Message,
+  MessageWithReplies,
   PageMessage,
+  PageMessageWithReplies,
   QueryApiMessageGetParams,
+  StatsApiMessageStatsGetParams,
   SyncRequest
 } from '../model';
 
@@ -23,8 +26,8 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
  */
 export const queryApiMessageGet = (
     params?: QueryApiMessageGetParams,
- options?: SecondParameter<typeof customAxiosInstance<Message | Message[] | PageMessage>>,) => {
-      return customAxiosInstance<Message | Message[] | PageMessage>(
+ options?: SecondParameter<typeof customAxiosInstance<MessageWithReplies | Message | PageMessageWithReplies | PageMessage | null>>,) => {
+      return customAxiosInstance<MessageWithReplies | Message | PageMessageWithReplies | PageMessage | null>(
       {url: `/api/message`, method: 'GET',
         params
     },
@@ -43,5 +46,19 @@ export const syncApiMessageSyncPost = (
     },
       options);
     }
+  /**
+ * 数据分析：当前周期 vs 前一周期的工单/机器人统计 + 问题分类分布
+ * @summary Stats
+ */
+export const statsApiMessageStatsGet = (
+    params?: StatsApiMessageStatsGetParams,
+ options?: SecondParameter<typeof customAxiosInstance<unknown>>,) => {
+      return customAxiosInstance<unknown>(
+      {url: `/api/message/stats`, method: 'GET',
+        params
+    },
+      options);
+    }
   export type QueryApiMessageGetResult = NonNullable<Awaited<ReturnType<typeof queryApiMessageGet>>>
 export type SyncApiMessageSyncPostResult = NonNullable<Awaited<ReturnType<typeof syncApiMessageSyncPost>>>
+export type StatsApiMessageStatsGetResult = NonNullable<Awaited<ReturnType<typeof statsApiMessageStatsGet>>>

@@ -2,11 +2,13 @@ import { RobotOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, Card, Descriptions, Modal, Space, Tag, Timeline, theme } from 'antd';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { Message } from '@/api/model';
+import type { Message, MessageWithReplies } from '@/api/model';
 import { FIELD_LABELS, MSG_TYPE_MAP, TAG_KEYS } from './constants';
 import {
   formatTimestampMs,
   getBotProcessed,
+  getDutyUser,
+  getQaTracking,
   getRawData,
   getThreadContent,
   renderFieldValue,
@@ -24,17 +26,24 @@ function renderProblemCategoryTag(c?: string | null) {
 interface DetailModalProps {
   open: boolean;
   onClose: () => void;
-  /** [主消息, ...回复] */
-  messages: Message[];
+  /** 主消息 + 嵌套的 replies 字段 */
+  message: MessageWithReplies | null;
   loading: boolean;
 }
 
-export function DetailModal({ open, onClose, messages, loading }: DetailModalProps) {
+export function DetailModal({ open, onClose, message, loading }: DetailModalProps) {
   const { token } = theme.useToken();
-  const thread = messages[0];
-  const replies = messages.slice(1);
+  const thread = message;
+  const replies = message?.replies ?? [];
   const content = getThreadContent(thread);
   const botProcessed = getBotProcessed(thread);
+  const dutyUser = getDutyUser(thread);
+  const qaTracking = getQaTracking(thread);
+  const qaEntries = qaTracking
+    ? Object.entries(qaTracking).filter(
+        ([k, v]) => k !== 'record_id' && v != null && String(v).trim() !== '',
+      )
+    : [];
 
   const fieldEntries = Object.entries(FIELD_LABELS)
     .filter(([k]) => !TAG_KEYS.includes(k) && content[k])
@@ -113,6 +122,47 @@ export function DetailModal({ open, onClose, messages, loading }: DetailModalPro
               boxShadow: '0 0 12px rgba(0,0,0,0.1)',
             }}
           >
+            <Card size="small" title="处理信息" style={{ borderRadius: token.borderRadiusLG, marginBottom: 16 }}>
+              <Descriptions column={2} size="small" labelStyle={{ width: 88 }}>
+                <Descriptions.Item label="值班人">
+                  {dutyUser || <span style={{ color: token.colorTextQuaternary }}>-</span>}
+                </Descriptions.Item>
+                <Descriptions.Item label="问题分类">
+                  {renderProblemCategoryTag(botProcessed?.problem_category) ?? (
+                    <span style={{ color: token.colorTextQuaternary }}>-</span>
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="机器人处理">
+                  {botProcessed ? (
+                    <Tag icon={<RobotOutlined />} color={token.colorPrimary}>是</Tag>
+                  ) : (
+                    <span style={{ color: token.colorTextQuaternary }}>否</span>
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="问题原因跟进">
+                  {qaTracking ? (
+                    <Tag color="success">已跟进</Tag>
+                  ) : (
+                    <span style={{ color: token.colorTextQuaternary }}>未跟进</span>
+                  )}
+                </Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card size="small" title="问题原因" style={{ borderRadius: token.borderRadiusLG, marginBottom: 16 }}>
+              {qaEntries.length === 0 ? (
+                <div style={{ color: token.colorTextQuaternary, textAlign: 'center', padding: 8 }}>未跟进</div>
+              ) : (
+                <Descriptions column={1} size="small" bordered labelStyle={{ width: 140, whiteSpace: 'nowrap' }}>
+                  {qaEntries.map(([k, v]) => (
+                    <Descriptions.Item key={k} label={k}>
+                      <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{String(v)}</div>
+                    </Descriptions.Item>
+                  ))}
+                </Descriptions>
+              )}
+            </Card>
+
             <Card size="small" title="用户原文" style={{ borderRadius: token.borderRadiusLG, marginBottom: 16 }}>
               <div
                 style={{

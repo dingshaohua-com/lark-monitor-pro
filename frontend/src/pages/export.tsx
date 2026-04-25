@@ -1,38 +1,25 @@
-import { BarChartOutlined, CheckOutlined, DownloadOutlined, MessageOutlined } from '@ant-design/icons';
+import { BarChartOutlined, CheckOutlined, DownloadOutlined } from '@ant-design/icons';
 import { Button, Card, Checkbox, DatePicker, Space, theme } from 'antd';
 import dayjs from 'dayjs';
 import { useState } from 'react';
 import { customAxiosInstance } from '@/api/api.base';
+import { queryApiMessageGet } from '@/api/endpoints/work-order';
+import type { PageMessageWithReplies } from '@/api/model';
 
 const { RangePicker } = DatePicker;
 
-interface ExportResponse {
-  data: {
-    items: unknown[];
-    total: number;
-  };
+interface PeriodStats {
+  total: number;
+  bot_processed: number;
+  correct_count: number;
+  incorrect_count: number;
+  problem_category_counts: Record<string, number>;
 }
 
 interface StatsResponse {
-  data: {
-    current: {
-      total: number;
-      bot_replied: number;
-      bot_processed: number;
-      correct_count: number;
-      incorrect_count: number;
-      problem_category_counts: Record<string, number>;
-    };
-    previous: {
-      total: number;
-      bot_replied: number;
-      bot_processed: number;
-      correct_count: number;
-      incorrect_count: number;
-      problem_category_counts: Record<string, number>;
-    };
-    period_days: number;
-  };
+  current: PeriodStats;
+  previous: PeriodStats;
+  period_days: number;
 }
 
 function triggerDownload(data: unknown, filename: string) {
@@ -50,41 +37,42 @@ export default function Export() {
   const { token } = theme.useToken();
   const today = dayjs();
   const [dateRange, setDateRange] = useState<[dayjs.Dayjs, dayjs.Dayjs] | null>([today.subtract(6, 'day'), today]);
-  const [withReply, setWithReply] = useState(true);
   const [withStats, setWithStats] = useState(true);
   const [loading, setLoading] = useState(false);
-  const [lastResult, setLastResult] = useState<{ count: number; filename: string } | null>(null);
+  const [lastResult, setLastResult] = useState<{ count: number; replyCount: number; filename: string } | null>(null);
 
-  const canExport = dateRange?.[0] && dateRange?.[1];
+  const canExport = !!(dateRange?.[0] && dateRange?.[1]);
 
   const handleExport = async () => {
     if (!canExport) return;
     setLoading(true);
     setLastResult(null);
     try {
-      const params: Record<string, string> = {
-        start_date: dateRange[0].format('YYYY-MM-DD'),
-        end_date: dateRange[1].format('YYYY-MM-DD'),
-      };
-      if (withReply) params.with_reply = 'true';
+      const startDate = dateRange[0].format('YYYY-MM-DD');
+      const endDate = dateRange[1].format('YYYY-MM-DD');
 
-      const res = (await customAxiosInstance<unknown>(
-        { url: '/api/raw-msg/', method: 'GET', params },
-      )) as ExportResponse;
+      // 不传 pageSize → 后端不分页，一次返回全部
+      const res = (await queryApiMessageGet({
+        withReply: true,
+        startDate,
+        endDate,
+      })) as PageMessageWithReplies;
+      const items = res?.items ?? [];
+      const replyCount = items.reduce((acc, m) => acc + (m.replies?.length ?? 0), 0);
 
-      const items = res.data?.items ?? [];
       let exportData: unknown = items;
-
       if (withStats) {
-        const statsRes = (await customAxiosInstance<unknown>(
-          { url: '/api/raw-msg/stats', method: 'GET', params: { start_date: params.start_date, end_date: params.end_date } },
-        )) as StatsResponse;
-        exportData = { statistics: statsRes.data, items };
+        const stats = await customAxiosInstance<{ data: StatsResponse }>({
+          url: '/api/message/stats',
+          method: 'GET',
+          params: { start_date: startDate, end_date: endDate },
+        });
+        exportData = { statistics: stats, items };
       }
 
-      const filename = `工单导出_${params.start_date}_${params.end_date}${withReply ? '_含回复' : ''}.json`;
+      const filename = `工单导出_${startDate}_${endDate}.json`;
       triggerDownload(exportData, filename);
-      setLastResult({ count: items.length, filename });
+      setLastResult({ count: items.length, replyCount, filename });
     } catch {
       /* handled by interceptor */
     } finally {
@@ -110,26 +98,15 @@ export default function Export() {
             />
           </div>
 
-          <Space direction="vertical" size={8}>
-            <Checkbox
-              checked={withReply}
-              onChange={(e) => setWithReply(e.target.checked)}
-            >
-              <Space size={4}>
-                <MessageOutlined />
-                <span>包含对应回复</span>
-              </Space>
-            </Checkbox>
-            <Checkbox
-              checked={withStats}
-              onChange={(e) => setWithStats(e.target.checked)}
-            >
-              <Space size={4}>
-                <BarChartOutlined />
-                <span>导出统计信息</span>
-              </Space>
-            </Checkbox>
-          </Space>
+          <Checkbox
+            checked={withStats}
+            onChange={(e) => setWithStats(e.target.checked)}
+          >
+            <Space size={4}>
+              <BarChartOutlined />
+              <span>导出统计信息</span>
+            </Space>
+          </Checkbox>
 
           <Button
             type="primary"
@@ -157,7 +134,10 @@ export default function Export() {
               }}
             >
               <CheckOutlined />
-              <span>已导出 {lastResult.count} 条工单 → {lastResult.filename}</span>
+              <span>
+                已导出 {lastResult.count} 条工单
+                {lastResult.replyCount > 0 ? `（含 ${lastResult.replyCount} 条回复）` : ''} → {lastResult.filename}
+              </span>
             </div>
           )}
         </Space>

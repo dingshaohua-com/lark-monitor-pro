@@ -4,6 +4,7 @@ import { Tag, Tooltip } from 'antd';
 import type { Message } from '@/api/model';
 import type {
   BotProcessed,
+  QaTracking,
   RawData,
   ReplyCardContent,
   ReplyCardElement,
@@ -13,12 +14,29 @@ import type {
 } from './types';
 import { PRIORITY_COLOR } from './constants';
 
+/** qa_tracking 中"问题原因 + 解决方案"列名（旧表保留） */
+const QA_TRACKING_REASON_KEY = '问题原因&解决方案';
+
 export const getThreadContent = (msg?: Message | null): ThreadContent => {
   return ((msg?.parsed_data as Record<string, unknown> | undefined)?.content as ThreadContent) ?? {};
 };
 
 export const getBotProcessed = (msg?: Message | null): BotProcessed | null => {
   return ((msg?.parsed_data as Record<string, unknown> | undefined)?.bot_processed as BotProcessed | null) ?? null;
+};
+
+export const getDutyUser = (msg?: Message | null): string => {
+  return ((msg?.parsed_data as Record<string, unknown> | undefined)?.duty_user as string) ?? '';
+};
+
+export const getQaTracking = (msg?: Message | null): QaTracking | null => {
+  return ((msg?.parsed_data as Record<string, unknown> | undefined)?.qa_tracking as QaTracking | null) ?? null;
+};
+
+export const getQaTrackingReason = (msg?: Message | null): string => {
+  const qt = getQaTracking(msg);
+  if (!qt) return '';
+  return String(qt[QA_TRACKING_REASON_KEY] ?? '').trim();
 };
 
 export const getReplyContent = (msg?: Message | null): ReplyContent => {
