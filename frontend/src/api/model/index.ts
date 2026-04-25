@@ -9,6 +9,7 @@ export * from './hTTPValidationError';
 export * from './message';
 export * from './messageParsedData';
 export * from './messageRawData';
+export * from './pageMessage';
 export * from './queryApiMessageGetParams';
 export * from './syncRequest';
 export * from './validationError';

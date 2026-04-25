@@ -6,6 +6,7 @@
  */
 import type {
   Message,
+  PageMessage,
   QueryApiMessageGetParams,
   SyncRequest
 } from '../model';
@@ -22,8 +23,8 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
  */
 export const queryApiMessageGet = (
     params?: QueryApiMessageGetParams,
- options?: SecondParameter<typeof customAxiosInstance<Message | Message[]>>,) => {
-      return customAxiosInstance<Message | Message[]>(
+ options?: SecondParameter<typeof customAxiosInstance<Message | Message[] | PageMessage>>,) => {
+      return customAxiosInstance<Message | Message[] | PageMessage>(
       {url: `/api/message`, method: 'GET',
         params
     },

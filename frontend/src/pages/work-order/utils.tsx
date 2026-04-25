@@ -1,106 +1,151 @@
+import type { ReactNode } from 'react';
 import dayjs from 'dayjs';
 import { Tag, Tooltip } from 'antd';
-import Markdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import type { MessageItem } from './types';
+import type { Message } from '@/api/model';
+import type {
+  BotProcessed,
+  RawData,
+  ReplyCardContent,
+  ReplyCardElement,
+  ReplyContent,
+  ReplyTextContent,
+  ThreadContent,
+} from './types';
 import { PRIORITY_COLOR } from './constants';
 
-/** 格式化反馈时间：优先用 feedback_time，否则用 create_time（毫秒时间戳） */
-export const formatFeedbackTime = (feedbackTime: string | undefined, createTime?: string | number | null): string => {
-  if (feedbackTime && String(feedbackTime).trim()) return feedbackTime.trim();
-  if (createTime == null || createTime === '') return '-';
-  const ms = typeof createTime === 'number' ? createTime : Number(createTime);
-  if (!Number.isFinite(ms)) return '-';
-  const d = dayjs(ms);
+export const getThreadContent = (msg?: Message | null): ThreadContent => {
+  return ((msg?.parsed_data as Record<string, unknown> | undefined)?.content as ThreadContent) ?? {};
+};
+
+export const getBotProcessed = (msg?: Message | null): BotProcessed | null => {
+  return ((msg?.parsed_data as Record<string, unknown> | undefined)?.bot_processed as BotProcessed | null) ?? null;
+};
+
+export const getReplyContent = (msg?: Message | null): ReplyContent => {
+  return ((msg?.parsed_data as Record<string, unknown> | undefined)?.content as ReplyContent) ?? {};
+};
+
+export const getRawData = (msg?: Message | null): RawData => {
+  return (msg?.raw_data as RawData) ?? {};
+};
+
+/** 格式化反馈时间：优先 parsed_data.content.feedback_time，否则 raw_data.create_time（毫秒时间戳字符串） */
+export const formatFeedbackTime = (msg?: Message | null): string => {
+  const fb = getThreadContent(msg).feedback_time;
+  if (fb && fb.trim()) return fb.trim();
+  return formatTimestampMs(getRawData(msg).create_time);
+};
+
+/** 格式化任意时间戳（毫秒字符串/数字） */
+export const formatTimestampMs = (ms?: string | number | null): string => {
+  if (ms == null || ms === '') return '-';
+  const n = typeof ms === 'number' ? ms : Number(ms);
+  if (!Number.isFinite(n)) return '-';
+  const d = dayjs(n);
   return d.isValid() ? d.format('YYYY-MM-DD HH:mm:ss') : '-';
 };
 
-const FIELD_VALUE_MAX_LEN = 4;
-
-export const getParsedFieldMap = (message?: MessageItem | null): Record<string, string> => {
-  const parsedContent = message?.ext?.parsedContent;
-  if (Array.isArray(parsedContent)) {
-    return parsedContent.reduce<Record<string, string>>((acc, item) => {
-      if (item?.key) {
-        acc[item.key] = item.value ?? '';
+/** 回复消息纯文本预览 */
+export const getReplyPreview = (msg?: Message | null): string => {
+  const c = getReplyContent(msg);
+  if (!c) return '';
+  const text = (c as ReplyTextContent).text;
+  if (typeof text === 'string') return text;
+  const card = c as ReplyCardContent;
+  if (Array.isArray(card.elements)) {
+    const parts: string[] = [];
+    for (const row of card.elements) {
+      if (!Array.isArray(row)) continue;
+      for (const el of row) {
+        if (!el || typeof el !== 'object') continue;
+        if (el.tag === 'text' || el.tag === 'a') {
+          parts.push(String((el as { text?: string }).text ?? ''));
+        }
       }
-      return acc;
-    }, {});
-  }
-  if (parsedContent && typeof parsedContent === 'object') {
-    return Object.entries(parsedContent).reduce<Record<string, string>>((acc, [key, value]) => {
-      acc[key] = value == null ? '' : String(value);
-      return acc;
-    }, {});
-  }
-  return {};
-};
-
-export const getParsedText = (message?: MessageItem | null): string => {
-  const parsedContent = message?.ext?.parsedContent;
-  if (typeof parsedContent === 'string') {
-    return parsedContent;
-  }
-  if (Array.isArray(parsedContent)) {
-    return parsedContent
-      .map((item) => item?.value?.trim())
-      .filter(Boolean)
-      .join('\n');
-  }
-  if (parsedContent && typeof parsedContent === 'object') {
-    return Object.values(parsedContent)
-      .map((value) => (value == null ? '' : String(value).trim()))
-      .filter(Boolean)
-      .join('\n');
+    }
+    return parts.filter(Boolean).join(' ').trim();
   }
   return '';
 };
 
-export const renderReplyContent = (message?: MessageItem | null, isAppCard?: boolean) => {
-  const botReply = message?.ext?.botReplyContent;
-  if (isAppCard && typeof botReply === 'string' && botReply) {
-    return (
-      <div className="bot-reply-md" style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.04)', borderRadius: 6, fontSize: 13, lineHeight: 1.6 }}>
-        <Markdown remarkPlugins={[remarkGfm]}>{botReply}</Markdown>
-      </div>
-    );
-  }
-  if (isAppCard && (!botReply || botReply === '')) {
-    return (
-      <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.02)', borderRadius: 6, fontSize: 13, color: 'rgba(0,0,0,0.35)', fontStyle: 'italic' }}>
-        机器人暂未生成有意义的回复内容
-      </div>
-    );
-  }
-  const parsedContent = message?.ext?.parsedContent;
-  if ((message?.ext?.typeDetail === 'reply_interactive' || message?.ext?.typeDetail === 'reply_post') && typeof parsedContent === 'string') {
-    return <div dangerouslySetInnerHTML={{ __html: parsedContent }} />;
-  }
-  const text = getParsedText(message) || '-';
-  if (text) {
-    return (
-      <div style={{ padding: '8px 12px', background: 'rgba(0,0,0,0.04)', borderRadius: 6, fontSize: 13, lineHeight: 1.6 }}>
-        {text}
-      </div>
-    );
-  }
-  return text;
-};
-
-export const renderFieldValue = (fieldKey: string, value: string) => {
+/** 主消息字段渲染 */
+export const renderFieldValue = (fieldKey: string, value: string | undefined): ReactNode => {
   if (!value) return '-';
   if (fieldKey === 'priority') {
     return <Tag color={PRIORITY_COLOR[value] ?? 'default'}>{value}</Tag>;
   }
-  if (fieldKey === 'online_version_url') {
-    return <a href={value} target="_blank" rel="noopener noreferrer">点此查看</a>;
+  if (fieldKey === 'payload_url' && value.startsWith('http')) {
+    return (
+      <a href={value} target="_blank" rel="noopener noreferrer">点此查看</a>
+    );
   }
-  const truncated = value.length > FIELD_VALUE_MAX_LEN
-    ? `${value.slice(0, FIELD_VALUE_MAX_LEN)}...`
-    : value;
-  return (
-    <Tooltip title={value}>
-      <span style={{ cursor: 'default', whiteSpace: 'nowrap' }}>{truncated}</span>
-    </Tooltip>
-  );
+  const MAX = 10;
+  if (value.length > MAX) {
+    return (
+      <Tooltip title={value}>
+        <span style={{ cursor: 'default', whiteSpace: 'nowrap' }}>{`${value.slice(0, MAX)}...`}</span>
+      </Tooltip>
+    );
+  }
+  return <span style={{ whiteSpace: 'nowrap' }}>{value}</span>;
+};
+
+/** 渲染回复消息正文（卡片/文本） */
+export const renderReplyBody = (msg: Message): ReactNode => {
+  const content = getReplyContent(msg);
+  const text = (content as ReplyTextContent).text;
+  if (typeof text === 'string') {
+    return <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{text || '-'}</div>;
+  }
+  const card = content as ReplyCardContent;
+  const lines: ReactNode[] = [];
+  if (card.title) {
+    lines.push(
+      <div key="__title" style={{ fontWeight: 600, marginBottom: 4 }}>
+        {card.title}
+      </div>,
+    );
+  }
+  if (Array.isArray(card.elements)) {
+    card.elements.forEach((row, ri) => {
+      if (!Array.isArray(row)) return;
+      const children: ReactNode[] = [];
+      row.forEach((el: ReplyCardElement, ei) => {
+        if (!el || typeof el !== 'object') return;
+        if (el.tag === 'text') {
+          const t = (el as { text?: string }).text ?? '';
+          if (t) children.push(<span key={ei}>{t}</span>);
+        } else if (el.tag === 'a') {
+          const a = el as { text?: string; href?: string };
+          children.push(
+            <a key={ei} href={a.href} target="_blank" rel="noopener noreferrer">
+              {a.text ?? a.href}
+            </a>,
+          );
+        } else if (el.tag === 'img') {
+          children.push(
+            <span key={ei} style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>[图片]</span>,
+          );
+        } else if (el.tag === 'button') {
+          const b = el as { text?: string };
+          children.push(
+            <span key={ei} style={{ color: 'rgba(0,0,0,0.45)', fontSize: 12 }}>[按钮: {b.text ?? ''}]</span>,
+          );
+        } else if (el.tag === 'hr') {
+          children.push(
+            <hr key={ei} style={{ border: 0, borderTop: '1px dashed rgba(0,0,0,0.1)', margin: '4px 0' }} />,
+          );
+        }
+      });
+      if (children.length > 0) {
+        lines.push(
+          <div key={ri} style={{ marginBottom: 2 }}>
+            {children}
+          </div>,
+        );
+      }
+    });
+  }
+  if (lines.length === 0) return <div>-</div>;
+  return <div>{lines}</div>;
 };

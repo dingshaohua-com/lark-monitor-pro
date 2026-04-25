@@ -1,53 +1,50 @@
-import { CheckCircleOutlined, RobotOutlined } from '@ant-design/icons';
+import { RobotOutlined, UserOutlined } from '@ant-design/icons';
 import { Button, Card, Descriptions, Modal, Space, Tag, Timeline, theme } from 'antd';
-import type { MessageItem } from './types';
-import { MSG_TYPE_MAP, TAG_KEYS } from './constants';
-import { getParsedFieldMap, renderFieldValue, renderReplyContent } from './utils';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import type { Message } from '@/api/model';
+import { FIELD_LABELS, MSG_TYPE_MAP, TAG_KEYS } from './constants';
+import {
+  formatTimestampMs,
+  getBotProcessed,
+  getRawData,
+  getThreadContent,
+  renderFieldValue,
+  renderReplyBody,
+} from './utils';
 
-function renderProblemCategoryTag(c?: string) {
-  const v = c || '待人工确认';
-  if (v.startsWith('技术问题')) return <Tag color="red">{v}</Tag>;
-  if (v.startsWith('非技术问题')) return <Tag color="green">{v}</Tag>;
-  if (v === '重复反馈') return <Tag color="orange">{v}</Tag>;
-  return <Tag color="blue">{v}</Tag>;
+function renderProblemCategoryTag(c?: string | null) {
+  if (!c) return null;
+  if (c.startsWith('技术问题')) return <Tag color="red">{c}</Tag>;
+  if (c.startsWith('非技术问题')) return <Tag color="green">{c}</Tag>;
+  if (c === '重复反馈') return <Tag color="orange">{c}</Tag>;
+  return <Tag color="blue">{c}</Tag>;
 }
 
 interface DetailModalProps {
   open: boolean;
   onClose: () => void;
-  detail: MessageItem | null;
+  /** [主消息, ...回复] */
+  messages: Message[];
   loading: boolean;
-  workOrderDict: Record<string, string>;
 }
 
-export function DetailModal({ open, onClose, detail, loading, workOrderDict }: DetailModalProps) {
+export function DetailModal({ open, onClose, messages, loading }: DetailModalProps) {
   const { token } = theme.useToken();
-  const detailFields = getParsedFieldMap(detail);
-  const detailReplies = detail?.replies ?? [];
+  const thread = messages[0];
+  const replies = messages.slice(1);
+  const content = getThreadContent(thread);
+  const botProcessed = getBotProcessed(thread);
 
-  const detailFieldEntries = (() => {
-    let entries: [string, string][] = [];
-    if (Object.keys(workOrderDict).length > 0) {
-      entries = Object.entries(workOrderDict)
-        .filter(([, fieldKey]) => fieldKey !== 'user_content' && !TAG_KEYS.includes(fieldKey) && Boolean(detailFields[fieldKey]));
-    } else if (detail?.ext?.parsedContent && Array.isArray(detail.ext.parsedContent)) {
-      const parsedContent = detail.ext.parsedContent;
-      entries = parsedContent
-        .filter((item) => item?.key && item.key !== 'user_content' && !TAG_KEYS.includes(item.key ?? '') && item.value)
-        .map((item) => [item.label ?? item.key ?? '', item.key ?? ''] as [string, string]);
-    }
-    const tagsMerged = [detailFields.tag_l1, detailFields.tag_l2, detailFields.tag_l3].filter(Boolean).join(' / ');
-    if (tagsMerged) {
-      entries.push(['标签', '__tags']);
-    }
-    return entries;
-  })();
-
-  // const detailTitle = detailFields.user_content || '工单详情';
+  const fieldEntries = Object.entries(FIELD_LABELS)
+    .filter(([k]) => !TAG_KEYS.includes(k) && content[k])
+    .map(([k, label]) => [k, label] as [string, string]);
+  const tagsMerged = [content.tag_l1, content.tag_l2, content.tag_l3].filter(Boolean).join(' / ');
+  if (tagsMerged) fieldEntries.push(['__tags', '标签']);
 
   return (
     <Modal
-      title=''
+      title=""
       open={open}
       onCancel={onClose}
       footer={<Button onClick={onClose}>关闭</Button>}
@@ -63,10 +60,30 @@ export function DetailModal({ open, onClose, detail, loading, workOrderDict }: D
         },
       }}
     >
-      {detail && (
-        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', gap: 16, padding: 24 }}>
-          {detailFieldEntries.length > 0 && (
-            <div style={{ flexShrink: 0, maxHeight: '40%', overflowY: 'auto', padding: 24, paddingBottom: 12, borderRadius: token.borderRadiusLG, boxShadow: '0 0 12px rgba(0,0,0,0.1)' }}>
+      {thread && (
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+            gap: 16,
+            padding: 24,
+          }}
+        >
+          {fieldEntries.length > 0 && (
+            <div
+              style={{
+                flexShrink: 0,
+                maxHeight: '40%',
+                overflowY: 'auto',
+                padding: 24,
+                paddingBottom: 12,
+                borderRadius: token.borderRadiusLG,
+                boxShadow: '0 0 12px rgba(0,0,0,0.1)',
+              }}
+            >
               <Descriptions
                 className="work-order-detail-descriptions"
                 column={3}
@@ -75,106 +92,120 @@ export function DetailModal({ open, onClose, detail, loading, workOrderDict }: D
                 labelStyle={{ whiteSpace: 'nowrap', width: 92 }}
               >
                 <Descriptions.Item label="工单ID" span={3}>
-                  <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{detail.message_id}</span>
+                  <span style={{ fontFamily: 'monospace', fontSize: 12 }}>{thread.id}</span>
                 </Descriptions.Item>
-                {detailFieldEntries.map(([label, fieldKey]) => (
-                  <Descriptions.Item key={fieldKey} label={label} span={fieldKey === 'cs_remark' ? 3 : 1}>
-                    {renderFieldValue(
-                      fieldKey,
-                      fieldKey === '__tags'
-                        ? [detailFields.tag_l1, detailFields.tag_l2, detailFields.tag_l3].filter(Boolean).join(' / ')
-                        : detailFields[fieldKey],
-                    )}
+                {fieldEntries.map(([k, label]) => (
+                  <Descriptions.Item key={k} label={label} span={k === 'cs_remark' ? 3 : 1}>
+                    {k === '__tags' ? tagsMerged : renderFieldValue(k, content[k])}
                   </Descriptions.Item>
                 ))}
               </Descriptions>
             </div>
           )}
 
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '24px', borderRadius: token.borderRadiusLG, boxShadow: '0 0 12px rgba(0,0,0,0.1)' }}>
-            <Card size="small" title="处理信息" style={{ borderRadius: token.borderRadiusLG, marginBottom: 20 }}>
-              <Descriptions column={2} size="small" labelStyle={{ width: 88 }}>
-                <Descriptions.Item label="值班人">
-                  {detail.ext?.dutyUser || <span style={{ color: token.colorTextQuaternary }}>-</span>}
-                </Descriptions.Item>
-                <Descriptions.Item label="问题分类">
-                  {renderProblemCategoryTag(detail.ext?.problemCategory)}
-                </Descriptions.Item>
-                <Descriptions.Item label="机器人参与">
-                  {detail.ext?.isRepliedByBot ? (
-                    <Tag icon={<RobotOutlined />} color={token.colorPrimary}>是</Tag>
-                  ) : (
-                    <span style={{ color: token.colorTextQuaternary }}>否</span>
-                  )}
-                </Descriptions.Item>
-                <Descriptions.Item label="机器人处理">
-                  {!detail.ext?.isRepliedByBot ? (
-                    <span style={{ color: token.colorTextQuaternary }}>-</span>
-                  ) : detail.ext?.isBotProcessed ? (
-                    <Tag icon={<CheckCircleOutlined />} color="success">已处理</Tag>
-                  ) : (
-                    <Tag color="default">未处理</Tag>
-                  )}
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
-
-            <Card size="small" title="问题原因" style={{ borderRadius: token.borderRadiusLG, marginBottom: 20 }}>
-              {detail.ext?.qaTracking ? (
-                <Descriptions column={1} size="small" bordered labelStyle={{ width: 140, whiteSpace: 'nowrap' }}>
-                  {Object.entries(detail.ext.qaTracking)
-                    .filter(([, v]) => v != null && String(v).trim() !== '')
-                    .map(([k, v]) => (
-                      <Descriptions.Item key={k} label={k}>
-                        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{String(v)}</div>
-                      </Descriptions.Item>
-                    ))}
-                </Descriptions>
-              ) : (
-                <div style={{ color: token.colorTextQuaternary, textAlign: 'center', padding: 8 }}>未跟进</div>
-              )}
-            </Card>
-
-            <Card size="small" title="用户原文" style={{ borderRadius: token.borderRadiusLG, marginBottom: 20 }}>
-              <div style={{ maxHeight: 160, overflowY: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.8 }}>
-                {typeof detail.ext?.parsedContent === 'string' ? (
-                  <div dangerouslySetInnerHTML={{ __html: detail.ext.parsedContent }} />
-                ) : (
-                  detailFields.user_content || detailFields.text || '-'
-                )}
+          <div
+            style={{
+              flex: 1,
+              minHeight: 0,
+              overflowY: 'auto',
+              padding: 24,
+              borderRadius: token.borderRadiusLG,
+              boxShadow: '0 0 12px rgba(0,0,0,0.1)',
+            }}
+          >
+            <Card size="small" title="用户原文" style={{ borderRadius: token.borderRadiusLG, marginBottom: 16 }}>
+              <div
+                style={{
+                  maxHeight: 160,
+                  overflowY: 'auto',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-all',
+                  lineHeight: 1.8,
+                }}
+              >
+                {content.user_content || '-'}
               </div>
             </Card>
+
+            {botProcessed && (
+              <Card
+                size="small"
+                title={
+                  <Space>
+                    <RobotOutlined style={{ color: token.colorPrimary }} />
+                    <span>机器人处理</span>
+                  </Space>
+                }
+                extra={renderProblemCategoryTag(botProcessed.problem_category)}
+                style={{ borderRadius: token.borderRadiusLG, marginBottom: 16 }}
+              >
+                <div className="bot-reply-md" style={{ fontSize: 13, lineHeight: 1.7 }}>
+                  <Markdown remarkPlugins={[remarkGfm]}>{botProcessed.content || ''}</Markdown>
+                </div>
+                <div style={{ marginTop: 8, color: token.colorTextSecondary, fontSize: 12 }}>
+                  <Space split={<span style={{ color: token.colorBorder }}>·</span>}>
+                    <span>时间：{formatTimestampMs(botProcessed.timestamp)}</span>
+                    <span>👍 {botProcessed.upvoted_by?.length ?? 0}</span>
+                    <span>👎 {botProcessed.downvoted_by?.length ?? 0}</span>
+                  </Space>
+                </div>
+              </Card>
+            )}
+
             <Card
               size="small"
-              title={`回复 (${detailReplies.length})`}
+              title={`回复 (${replies.length})`}
               style={{ borderRadius: token.borderRadiusLG }}
             >
               {loading ? (
                 <div style={{ textAlign: 'center', padding: 16, color: token.colorTextQuaternary }}>加载中...</div>
-              ) : detailReplies.length === 0 ? (
+              ) : replies.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: 16, color: token.colorTextQuaternary }}>暂无回复</div>
               ) : (
                 <Timeline
-                  items={detailReplies.map((reply) => ({
-                    children: (
-                      <div>
-                        <Space size={8} style={{ marginBottom: 4 }}>
-                          <Tag color={reply.sender?.sender_type === 'user' ? token.colorPrimary : 'default'}>
-                            {reply.sender?.sender_type ?? '-'}
-                          </Tag>
-                          <Tag color={MSG_TYPE_MAP[reply.msg_type ?? '']?.color ?? 'default'}>
-                            {MSG_TYPE_MAP[reply.msg_type ?? '']?.label ?? reply.msg_type ?? '-'}
-                          </Tag>
-                          <span style={{ fontFamily: 'monospace', fontSize: 12, color: token.colorTextSecondary }}>
-                            {reply.create_time}
-                          </span>
-                        </Space>
-                        <div style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', lineHeight: 1.6 }}>
-                          {renderReplyContent(reply, reply.msg_type === 'interactive' && reply.sender?.sender_type === 'app')}
+                  items={replies.map((r) => {
+                    const rd = getRawData(r);
+                    const isBot = rd.sender?.sender_type === 'app';
+                    return {
+                      dot: isBot ? (
+                        <RobotOutlined style={{ color: token.colorPrimary }} />
+                      ) : (
+                        <UserOutlined />
+                      ),
+                      children: (
+                        <div>
+                          <Space size={8} style={{ marginBottom: 4 }}>
+                            <Tag color={isBot ? token.colorPrimary : 'default'}>
+                              {isBot ? '机器人' : '用户'}
+                            </Tag>
+                            <Tag color={MSG_TYPE_MAP[rd.msg_type ?? '']?.color ?? 'default'}>
+                              {MSG_TYPE_MAP[rd.msg_type ?? '']?.label ?? rd.msg_type ?? '-'}
+                            </Tag>
+                            <span
+                              style={{
+                                fontFamily: 'monospace',
+                                fontSize: 12,
+                                color: token.colorTextSecondary,
+                              }}
+                            >
+                              {formatTimestampMs(rd.create_time)}
+                            </span>
+                          </Space>
+                          <div
+                            style={{
+                              padding: '8px 12px',
+                              background: 'rgba(0,0,0,0.04)',
+                              borderRadius: 6,
+                              fontSize: 13,
+                              lineHeight: 1.6,
+                            }}
+                          >
+                            {renderReplyBody(r)}
+                          </div>
                         </div>
-                      </div>
-                    ),
-                  }))}
+                      ),
+                    };
+                  })}
                 />
               )}
             </Card>

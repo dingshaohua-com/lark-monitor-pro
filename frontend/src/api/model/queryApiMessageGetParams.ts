@@ -6,7 +6,28 @@
  */
 
 export type QueryApiMessageGetParams = {
-  id?: string | null;
-  /** 为 true 时同时返回主消息下 raw_data.parent_id 对应主消息 id 的回复 */
-  withReply?: boolean;
+id?: string | null;
+/**
+ * 为 true 时同时返回主消息下 raw_data.parent_id 指向主消息 id 的回复
+ */
+withReply?: boolean;
+/**
+ * 页码，从 1 开始（仅列表查询有效）
+ * @minimum 1
+ */
+page?: number;
+/**
+ * 每页条数（仅列表查询有效）
+ * @minimum 1
+ * @maximum 200
+ */
+pageSize?: number;
+/**
+ * 按用户原文模糊搜索（仅列表查询有效）
+ */
+keyword?: string | null;
+/**
+ * 按机器人问题分类过滤（仅列表查询有效）
+ */
+problemCategory?: string | null;
 };
