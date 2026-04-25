@@ -1,7 +1,7 @@
 from datetime import date
 from typing import List
 from functools import partial
-from sqlalchemy import func
+from sqlalchemy import BigInteger, func
 from sqlmodel import select, col
 from server.model.message import Message
 from server.model.bot_reply import BotReply
@@ -9,6 +9,7 @@ from server.schema.common import Page
 from server.utils.sync_table_helper import sync_table_helper
 from server.utils.db_helper import lark_monitor_db, AsyncSession
 from server.utils.lark_oapi_helper import get_msgs
+from server.utils.date_helper import get_date_range_epoch_ms
 
 
 async def _query_replies(session: AsyncSession, main_ids: List[str]) -> List[Message]:
@@ -69,12 +70,17 @@ async def get_list(
     page_size: int = 20,
     keyword: str | None = None,
     problem_category: str | None = None,
+    start_date: str | None = None,
+    end_date: str | None = None,
+    has_bot_processed: str | None = None,
 ) -> Page[Message]:
     """默认只查主消息 (type=thread)。with_reply=True 时额外带上 raw_data.parent_id 指向这些主消息的回复。
 
-    分页作用在主消息上，total 为主消息总数；回复不计入 total，会追加到 items 末尾。
-    keyword 对 parsed_data.content.user_content 做 ILIKE 模糊匹配。
-    problem_category 关联 bot_reply 表过滤（仅返回机器人已处理且分类匹配的工单）。
+    过滤项（全部 SQL 层完成）：
+    - keyword            → parsed_data.content.user_content ILIKE
+    - problem_category   → 关联 bot_reply 表过滤
+    - start_date / end_date → raw_data.create_time(毫秒戳) 做范围过滤
+    - has_bot_processed  → "yes"/"no"，工单是否在 bot_reply 表里有记录
     """
     base_where = col(Message.type) == "thread"
     if keyword and keyword.strip():
@@ -85,6 +91,22 @@ async def get_list(
             col(BotReply.problem_category) == problem_category
         )
         base_where = base_where & col(Message.id).in_(ticket_subq)
+
+    start_ms, end_ms = get_date_range_epoch_ms(start_date, end_date)
+    if start_ms is not None or end_ms is not None:
+        create_time_ms = col(Message.raw_data)["create_time"].astext.cast(BigInteger)
+        if start_ms is not None:
+            base_where = base_where & (create_time_ms >= start_ms)
+        if end_ms is not None:
+            base_where = base_where & (create_time_ms <= end_ms)
+
+    if has_bot_processed in ("yes", "no"):
+        bot_exists = (
+            select(BotReply.ticket_id)
+            .where(col(BotReply.ticket_id) == col(Message.id))
+            .exists()
+        )
+        base_where = base_where & (bot_exists if has_bot_processed == "yes" else ~bot_exists)
 
     count_stmt = select(func.count()).select_from(Message).where(base_where)
     total = (await session.exec(count_stmt)).one()

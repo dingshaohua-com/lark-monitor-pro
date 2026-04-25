@@ -84,6 +84,10 @@ def _parse_body_content(content):
     except json.JSONDecodeError:
         return content if content else None
 
+# 跳过的飞书消息类型：飞书系统通知（入群/退群/改名等），与工单业务无关
+SKIP_MSG_TYPES = {"system"}
+
+
 async def sync_table_helper(session: AsyncSession, items,  parent_node ):
     if not items:
         return
@@ -91,7 +95,15 @@ async def sync_table_helper(session: AsyncSession, items,  parent_node ):
     # 1. 准备批量数据列表（不直接 add，而是先准备数据）
     data_to_sync=[]
     for item in items:
+        # 1.1 黑名单：飞书系统通知不入库
+        if item.get("msg_type") in SKIP_MSG_TYPES:
+            continue
+
         parse_body_content = _parse_body_content(item.get("body", {}).get("content"))
+        # 1.2 撤回消息 / 合并转发 / 空 body：跳过（_parse_body_content 已返回 None）
+        if parse_body_content is None:
+            continue
+
         message = {
             "id": item.get("message_id"),
             "raw_data": item,
@@ -116,6 +128,9 @@ async def sync_table_helper(session: AsyncSession, items,  parent_node ):
 
         data_to_sync.append(message)
 
+    if not data_to_sync:
+        print(f"📦 [Sync] {len(items)} 条全部跳过（system / 撤回 / 空 body）")
+        return
 
     # 2. 构造 PostgreSQL 特有的 UPSERT 语句
     # 这一步的仪式感在于：它保证了同步任务是“幂等”的（重复运行也不会报错）
@@ -132,4 +147,5 @@ async def sync_table_helper(session: AsyncSession, items,  parent_node ):
     await session.execute(upsert_stmt)
     await session.commit()
 
-    print(f"📦 [Sync] 成功落盘 {len(items)} 条数据")
+    skipped = len(items) - len(data_to_sync)
+    print(f"📦 [Sync] 成功落盘 {len(data_to_sync)} 条" + (f"（跳过 {skipped} 条无效消息）" if skipped else ""))

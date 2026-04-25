@@ -30,4 +30,16 @@ keyword?: string | null;
  * 按机器人问题分类过滤（仅列表查询有效）
  */
 problemCategory?: string | null;
+/**
+ * 反馈起始日期 YYYY-MM-DD（含）
+ */
+startDate?: string | null;
+/**
+ * 反馈结束日期 YYYY-MM-DD（含）
+ */
+endDate?: string | null;
+/**
+ * 机器人是否处理过：yes / no
+ */
+hasBotProcessed?: string | null;
 };

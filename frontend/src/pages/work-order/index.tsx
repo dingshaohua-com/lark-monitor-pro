@@ -1,6 +1,7 @@
 import { EyeOutlined, ReloadOutlined, RobotOutlined, SearchOutlined } from '@ant-design/icons';
-import { Button, Card, Col, Form, Input, Pagination, Row, Select, Table, Tag, theme } from 'antd';
+import { Button, Card, Col, DatePicker, Form, Input, Pagination, Row, Select, Table, Tag, theme } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
+import type { Dayjs } from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTableScrolly } from '@/components/use-table-scrolly';
 import { queryApiMessageGet } from '@/api/endpoints/work-order';
@@ -8,6 +9,17 @@ import type { Message, PageMessage } from '@/api/model';
 import { PRIORITY_COLOR, problemCategoryOptions } from './constants';
 import { DetailModal } from './detail-modal';
 import { formatFeedbackTime, getBotProcessed, getThreadContent } from './utils';
+
+const { RangePicker } = DatePicker;
+
+interface WorkOrderFilters {
+  id?: string;
+  keyword?: string;
+  problemCategory?: string;
+  startDate?: string;
+  endDate?: string;
+  hasBotProcessed?: string;
+}
 
 export default function WorkOrder() {
   const { token } = theme.useToken();
@@ -23,17 +35,14 @@ export default function WorkOrder() {
   const { ref: tableWrapRef, scrollY } = useTableScrolly();
 
   const fetchData = useCallback(
-    async (
-      p: number,
-      size: number,
-      id?: string,
-      keyword?: string,
-      problemCategory?: string,
-    ) => {
+    async (p: number, size: number, filters: WorkOrderFilters = {}) => {
       setLoading(true);
       try {
-        if (id) {
-          const data = (await queryApiMessageGet({ id, withReply: false })) as Message | null;
+        if (filters.id) {
+          const data = (await queryApiMessageGet({
+            id: filters.id,
+            withReply: false,
+          })) as Message | null;
           if (data && !Array.isArray(data)) {
             setItems([data]);
             setTotal(1);
@@ -47,8 +56,11 @@ export default function WorkOrder() {
           const data = (await queryApiMessageGet({
             page: p,
             pageSize: size,
-            keyword: keyword || undefined,
-            problemCategory: problemCategory || undefined,
+            keyword: filters.keyword || undefined,
+            problemCategory: filters.problemCategory || undefined,
+            startDate: filters.startDate || undefined,
+            endDate: filters.endDate || undefined,
+            hasBotProcessed: filters.hasBotProcessed || undefined,
           })) as PageMessage;
           setItems(data?.items ?? []);
           setTotal(data?.total ?? 0);
@@ -66,17 +78,21 @@ export default function WorkOrder() {
     fetchData(1, pageSize);
   }, [fetchData]);
 
-  const getFilters = () => {
-    const id = (form.getFieldValue('id') as string | undefined)?.trim();
-    const keyword = (form.getFieldValue('keyword') as string | undefined)?.trim();
-    const problemCategory = form.getFieldValue('problem_category') as string | undefined;
-    return { id, keyword, problemCategory };
+  const getFilters = (): WorkOrderFilters => {
+    const dateRange = form.getFieldValue('dateRange') as [Dayjs, Dayjs] | undefined;
+    return {
+      id: (form.getFieldValue('id') as string | undefined)?.trim() || undefined,
+      keyword: (form.getFieldValue('keyword') as string | undefined)?.trim() || undefined,
+      problemCategory:
+        (form.getFieldValue('problem_category') as string | undefined) || undefined,
+      startDate: dateRange?.[0]?.format('YYYY-MM-DD') || undefined,
+      endDate: dateRange?.[1]?.format('YYYY-MM-DD') || undefined,
+      hasBotProcessed:
+        (form.getFieldValue('has_bot_processed') as string | undefined) || undefined,
+    };
   };
 
-  const onSearch = () => {
-    const { id, keyword, problemCategory } = getFilters();
-    fetchData(1, pageSize, id, keyword, problemCategory);
-  };
+  const onSearch = () => fetchData(1, pageSize, getFilters());
 
   const onReset = () => {
     form.resetFields();
@@ -86,8 +102,7 @@ export default function WorkOrder() {
   const onPageChange = (nextPage: number, nextPageSize: number) => {
     setPage(nextPage);
     setPageSize(nextPageSize);
-    const { id, keyword, problemCategory } = getFilters();
-    fetchData(nextPage, nextPageSize, id, keyword, problemCategory);
+    fetchData(nextPage, nextPageSize, getFilters());
   };
 
   const openDetail = async (msg: Message) => {
@@ -202,8 +217,25 @@ export default function WorkOrder() {
               </Form.Item>
             </Col>
             <Col span={8}>
+              <Form.Item name="dateRange" label="反馈日期" style={{ marginBottom: 0 }}>
+                <RangePicker style={{ width: '100%' }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
               <Form.Item name="problem_category" label="问题分类" style={{ marginBottom: 0 }}>
                 <Select placeholder="全部" allowClear options={problemCategoryOptions} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="has_bot_processed" label="机器人处理" style={{ marginBottom: 0 }}>
+                <Select
+                  placeholder="全部"
+                  allowClear
+                  options={[
+                    { label: '已处理', value: 'yes' },
+                    { label: '未处理', value: 'no' },
+                  ]}
+                />
               </Form.Item>
             </Col>
             <Col span={24} style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -232,10 +264,7 @@ export default function WorkOrder() {
             type="text"
             size="small"
             icon={<ReloadOutlined />}
-            onClick={() => {
-              const { id, keyword, problemCategory } = getFilters();
-              fetchData(page, pageSize, id, keyword, problemCategory);
-            }}
+            onClick={() => fetchData(page, pageSize, getFilters())}
           />
         }
       >
