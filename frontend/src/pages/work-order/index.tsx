@@ -4,7 +4,10 @@ import type { ColumnsType } from 'antd/es/table';
 import type { Dayjs } from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
 import { useTableScrolly } from '@/components/use-table-scrolly';
-import { queryApiMessageGet } from '@/api/endpoints/work-order';
+import {
+  getMessageApiMessageMessageIdGet,
+  listMessagesApiMessageGet,
+} from '@/api/endpoints/work-order';
 import type { Message, MessageWithReplies, PageMessage } from '@/api/model';
 import { PRIORITY_COLOR, problemCategoryOptions } from './constants';
 import { DetailModal } from './detail-modal';
@@ -47,11 +50,10 @@ export default function WorkOrder() {
       setLoading(true);
       try {
         if (filters.id) {
-          const data = (await queryApiMessageGet({
-            id: filters.id,
+          const data = (await getMessageApiMessageMessageIdGet(filters.id, {
             withReply: false,
           })) as Message | null;
-          if (data && !Array.isArray(data)) {
+          if (data) {
             setItems([data]);
             setTotal(1);
             setPage(1);
@@ -61,7 +63,7 @@ export default function WorkOrder() {
             setTotal(0);
           }
         } else {
-          const data = (await queryApiMessageGet({
+          const data = (await listMessagesApiMessageGet({
             page: p,
             pageSize: size,
             keyword: filters.keyword || undefined,
@@ -123,7 +125,7 @@ export default function WorkOrder() {
     setDetailMessage(msg);
     setDetailLoading(true);
     try {
-      const data = (await queryApiMessageGet({ id: msg.id, withReply: true })) as
+      const data = (await getMessageApiMessageMessageIdGet(msg.id, { withReply: true })) as
         | MessageWithReplies
         | null;
       setDetailMessage(data ?? (msg as MessageWithReplies));

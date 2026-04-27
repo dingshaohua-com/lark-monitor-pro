@@ -3,7 +3,7 @@ import { Button, Card, Checkbox, DatePicker, Space, theme } from 'antd';
 import dayjs from 'dayjs';
 import { useState } from 'react';
 import { customAxiosInstance } from '@/api/api.base';
-import { queryApiMessageGet } from '@/api/endpoints/work-order';
+import { listMessagesApiMessageGet } from '@/api/endpoints/work-order';
 import type { PageMessageWithReplies } from '@/api/model';
 
 const { RangePicker } = DatePicker;
@@ -52,7 +52,7 @@ export default function Export() {
       const endDate = dateRange[1].format('YYYY-MM-DD');
 
       // 不传 pageSize → 后端不分页，一次返回全部
-      const res = (await queryApiMessageGet({
+      const res = (await listMessagesApiMessageGet({
         withReply: true,
         startDate,
         endDate,

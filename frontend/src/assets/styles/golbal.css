@@ -41,6 +41,10 @@
 .work-order-detail-descriptions .ant-descriptions-item-content {
   width: 16.666%; /* 3 列 × 2 单元格 = 6 列等分 */
 }
+.work-order-detail-descriptions .ant-descriptions-item-content {
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
 
 /* 机器人回复 Markdown 样式 */
 .bot-reply-md h1, .bot-reply-md h2, .bot-reply-md h3,

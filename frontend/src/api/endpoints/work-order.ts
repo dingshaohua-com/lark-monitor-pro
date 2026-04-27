@@ -5,11 +5,12 @@
  * OpenAPI spec version: 0.1.0
  */
 import type {
+  GetMessageApiMessageMessageIdGetParams,
+  ListMessagesApiMessageGetParams,
   Message,
   MessageWithReplies,
   PageMessage,
   PageMessageWithReplies,
-  QueryApiMessageGetParams,
   StatsApiMessageStatsGetParams,
   SyncRequest
 } from '../model';
@@ -22,12 +23,13 @@ type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
 
 
   /**
- * @summary Query
+ * 主消息列表查询，支持多条件筛选 + 分页 / 不分页（导出）。
+ * @summary List Messages
  */
-export const queryApiMessageGet = (
-    params?: QueryApiMessageGetParams,
- options?: SecondParameter<typeof customAxiosInstance<MessageWithReplies | Message | PageMessageWithReplies | PageMessage | null>>,) => {
-      return customAxiosInstance<MessageWithReplies | Message | PageMessageWithReplies | PageMessage | null>(
+export const listMessagesApiMessageGet = (
+    params?: ListMessagesApiMessageGetParams,
+ options?: SecondParameter<typeof customAxiosInstance<PageMessageWithReplies | PageMessage>>,) => {
+      return customAxiosInstance<PageMessageWithReplies | PageMessage>(
       {url: `/api/message`, method: 'GET',
         params
     },
@@ -59,6 +61,21 @@ export const statsApiMessageStatsGet = (
     },
       options);
     }
-  export type QueryApiMessageGetResult = NonNullable<Awaited<ReturnType<typeof queryApiMessageGet>>>
+  /**
+ * 按 id 查询单条工单，找不到返回 404。
+ * @summary Get Message
+ */
+export const getMessageApiMessageMessageIdGet = (
+    messageId: string,
+    params?: GetMessageApiMessageMessageIdGetParams,
+ options?: SecondParameter<typeof customAxiosInstance<MessageWithReplies | Message | null>>,) => {
+      return customAxiosInstance<MessageWithReplies | Message | null>(
+      {url: `/api/message/${messageId}`, method: 'GET',
+        params
+    },
+      options);
+    }
+  export type ListMessagesApiMessageGetResult = NonNullable<Awaited<ReturnType<typeof listMessagesApiMessageGet>>>
 export type SyncApiMessageSyncPostResult = NonNullable<Awaited<ReturnType<typeof syncApiMessageSyncPost>>>
 export type StatsApiMessageStatsGetResult = NonNullable<Awaited<ReturnType<typeof statsApiMessageStatsGet>>>
+export type GetMessageApiMessageMessageIdGetResult = NonNullable<Awaited<ReturnType<typeof getMessageApiMessageMessageIdGet>>>

@@ -57,7 +57,7 @@ export function DetailModal({ open, onClose, message, loading }: DetailModalProp
       open={open}
       onCancel={onClose}
       footer={<Button onClick={onClose}>关闭</Button>}
-      width={800}
+      width={960}
       destroyOnClose
       styles={{
         body: {
@@ -87,6 +87,7 @@ export function DetailModal({ open, onClose, message, loading }: DetailModalProp
                 flexShrink: 0,
                 maxHeight: '40%',
                 overflowY: 'auto',
+                overflowX: 'hidden',
                 padding: 24,
                 paddingBottom: 12,
                 borderRadius: token.borderRadiusLG,
@@ -117,13 +118,14 @@ export function DetailModal({ open, onClose, message, loading }: DetailModalProp
               flex: 1,
               minHeight: 0,
               overflowY: 'auto',
+              overflowX: 'hidden',
               padding: 24,
               borderRadius: token.borderRadiusLG,
               boxShadow: '0 0 12px rgba(0,0,0,0.1)',
             }}
           >
             <Card size="small" title="处理信息" style={{ borderRadius: token.borderRadiusLG, marginBottom: 16 }}>
-              <Descriptions column={2} size="small" labelStyle={{ width: 88 }}>
+              <Descriptions column={2} size="small" labelStyle={{ width: 100 }}>
                 <Descriptions.Item label="值班人">
                   {dutyUser || <span style={{ color: token.colorTextQuaternary }}>-</span>}
                 </Descriptions.Item>

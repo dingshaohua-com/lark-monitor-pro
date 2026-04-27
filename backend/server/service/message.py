@@ -1,15 +1,14 @@
 from datetime import date, datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 from typing import List
 from functools import partial
 from sqlalchemy import BigInteger, Date, cast, func
 from sqlmodel import select, col
 from server.model.message import Message
-from server.model.bot_reply import BotReply, latest_bot_reply_id_subq
+from server.model.bot_reply import BotReply
 from server.model.duty_schedule import DutySchedule
 from server.model.qa_tracking import QaTracking
 from server.schema.common import Page
-from server.schema.message import MessageWithReplies
+from server.schema.message import MessageListFilter, MessageWithReplies
 from server.utils.sync_table_helper import sync_table_helper
 from server.utils.db_helper import lark_monitor_db, AsyncSession
 from server.utils.lark_oapi_helper import get_msgs
@@ -39,11 +38,7 @@ async def _attach_bot_processed(session: AsyncSession, messages: List[Message]) 
     if not thread_ids:
         return
 
-    stmt = (
-        select(BotReply)
-        .where(col(BotReply.id).in_(latest_bot_reply_id_subq()))
-        .where(col(BotReply.ticket_id).in_(thread_ids))
-    )
+    stmt = select(BotReply).where(col(BotReply.ticket_id).in_(thread_ids))
     br_result = await session.exec(stmt)
     bot_reply_map = {br.ticket_id: br for br in br_result.all()}
 
@@ -56,7 +51,7 @@ async def _attach_bot_processed(session: AsyncSession, messages: List[Message]) 
         m.parsed_data = pd
 
 
-_CN_TZ = ZoneInfo("Asia/Shanghai")
+_CN_TZ = timezone(timedelta(hours=8))
 
 
 def _resolve_duty_date(msg: Message) -> date | None:
@@ -165,19 +160,11 @@ async def get_one(
 
 async def get_list(
     session: AsyncSession,
+    filter: MessageListFilter,
     with_reply: bool = False,
-    page: int = 1,
-    page_size: int | None = 20,
-    keyword: str | None = None,
-    problem_category: str | None = None,
-    start_date: str | None = None,
-    end_date: str | None = None,
-    has_bot_processed: str | None = None,
-    duty_user: str | None = None,
-    has_qa_tracking: str | None = None,
 ) -> Page[Message] | Page[MessageWithReplies]:
     """默认只查主消息 (type=thread)。with_reply=True 时每条 item 多一个 replies 字段（嵌套结构）。
-    page_size=None 时不分页，返回全部（导出场景）。
+    filter.page_size=None 时不分页，返回全部（导出场景）。
 
     过滤项（全部 SQL 层完成）：
     - keyword            → parsed_data.content.user_content ILIKE
@@ -187,19 +174,20 @@ async def get_list(
     - duty_user          → 先查 duty_schedule 拿匹配日期，再用 raw_data.create_time(Asia/Shanghai) 转日期 IN
     - has_qa_tracking    → "yes"/"no"，工单 feedback_id 是否在 qa_tracking 表里
     """
+    page = filter.page
+    page_size = filter.page_size
+
     base_where = col(Message.type) == "thread"
-    if keyword and keyword.strip():
+    if filter.keyword and filter.keyword.strip():
         user_content = col(Message.parsed_data)["content"]["user_content"].astext
-        base_where = base_where & user_content.ilike(f"%{keyword.strip()}%")
-    if problem_category:
-        ticket_subq = (
-            select(col(BotReply.ticket_id))
-            .where(col(BotReply.id).in_(latest_bot_reply_id_subq()))
-            .where(col(BotReply.problem_category) == problem_category)
+        base_where = base_where & user_content.ilike(f"%{filter.keyword.strip()}%")
+    if filter.problem_category:
+        ticket_subq = select(col(BotReply.ticket_id)).where(
+            col(BotReply.problem_category) == filter.problem_category
         )
         base_where = base_where & col(Message.id).in_(ticket_subq)
 
-    start_ms, end_ms = get_date_range_epoch_ms(start_date, end_date)
+    start_ms, end_ms = get_date_range_epoch_ms(filter.start_date, filter.end_date)
     if start_ms is not None or end_ms is not None:
         create_time_ms = col(Message.raw_data)["create_time"].astext.cast(BigInteger)
         if start_ms is not None:
@@ -207,15 +195,15 @@ async def get_list(
         if end_ms is not None:
             base_where = base_where & (create_time_ms <= end_ms)
 
-    if has_bot_processed in ("yes", "no"):
+    if filter.has_bot_processed in ("yes", "no"):
         bot_exists = (
             select(BotReply.ticket_id)
             .where(col(BotReply.ticket_id) == col(Message.id))
             .exists()
         )
-        base_where = base_where & (bot_exists if has_bot_processed == "yes" else ~bot_exists)
+        base_where = base_where & (bot_exists if filter.has_bot_processed == "yes" else ~bot_exists)
 
-    duty_user_kw = (duty_user or "").strip()
+    duty_user_kw = (filter.duty_user or "").strip()
     if duty_user_kw:
         # 先查 duty_schedule 拿到该值班人对应的所有日期
         dates_stmt = select(col(DutySchedule.duty_date)).where(
@@ -233,11 +221,11 @@ async def get_list(
         )
         base_where = base_where & ct_date.in_(matched_dates)
 
-    if has_qa_tracking in ("yes", "no"):
+    if filter.has_qa_tracking in ("yes", "no"):
         feedback_id_str = col(Message.parsed_data)["content"]["feedback_id"].astext
         qa_subq = select(col(QaTracking.feedback_id))
         base_where = base_where & (
-            feedback_id_str.in_(qa_subq) if has_qa_tracking == "yes" else feedback_id_str.notin_(qa_subq)
+            feedback_id_str.in_(qa_subq) if filter.has_qa_tracking == "yes" else feedback_id_str.notin_(qa_subq)
         )
 
     count_stmt = select(func.count()).select_from(Message).where(base_where)
@@ -309,13 +297,12 @@ async def _calc_period_stats(
         )
     ).one() or 0
 
-    # 3. 问题分类分布（每工单只算一次，取最新一条 bot_reply.problem_category）
+    # 3. 问题分类分布（每工单只算一次，bot_reply 与工单是一对一关系）
     #    上游已保证：每个工单在 bot_reply 表里都有记录，且 problem_category 不为空。
     #    所以这里直接 group by 输出，期望 sum(problem_category_counts) == total。
     period_thread_ids_subq = select(col(Message.id)).where(base_where)
     pc_stmt = (
         select(col(BotReply.problem_category), func.count())
-        .where(col(BotReply.id).in_(latest_bot_reply_id_subq()))
         .where(col(BotReply.ticket_id).in_(period_thread_ids_subq))
         .group_by(col(BotReply.problem_category))
     )

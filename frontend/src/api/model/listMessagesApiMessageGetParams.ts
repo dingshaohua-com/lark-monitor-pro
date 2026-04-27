@@ -5,14 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type QueryApiMessageGetParams = {
-id?: string | null;
+export type ListMessagesApiMessageGetParams = {
 /**
  * 为 true 时同时返回主消息下 raw_data.parent_id 指向主消息 id 的回复
  */
 withReply?: boolean;
 /**
- * 页码，从 1 开始（仅列表查询有效）
+ * 页码，从 1 开始
  * @minimum 1
  */
 page?: number;
@@ -21,11 +20,11 @@ page?: number;
  */
 pageSize?: number | null;
 /**
- * 按用户原文模糊搜索（仅列表查询有效）
+ * 按用户原文模糊搜索
  */
 keyword?: string | null;
 /**
- * 按机器人问题分类过滤（仅列表查询有效）
+ * 按机器人问题分类过滤
  */
 problemCategory?: string | null;
 /**
