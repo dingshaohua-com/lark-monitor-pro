@@ -48,5 +48,5 @@ class DatabaseService:
 # 预创建两个实例（此时只是配置，还没开工）
 PGSQL_URI=getenv("PGSQL_URI")
 print('PGSQL_URI'+PGSQL_URI)
-lark_monitor_db_url=PGSQL_URI+"/lark_monitor"
-lark_monitor_db = DatabaseService(lark_monitor_db_url, "lark_monitor")
+lark_monitor_db_url=PGSQL_URI+"/lark_monitor_pro"
+lark_monitor_db = DatabaseService(lark_monitor_db_url, "lark_monitor_pro")

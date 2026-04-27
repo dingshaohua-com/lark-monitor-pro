@@ -11,7 +11,7 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlmodel import col, select
 
 from server.exception.biz_error import BizError
-from server.model.bot_reply import BotReply
+from server.model.bot_reply import BotReply, latest_bot_reply_id_subq
 from server.model.duty_schedule import DutySchedule
 from server.model.message import Message
 from server.model.qa_tracking import QaTracking
@@ -343,7 +343,9 @@ async def upload_feedbacks(
             reply_map.setdefault(pid, []).append(r)
 
     bot_reply_result = await session.exec(
-        select(BotReply).where(col(BotReply.ticket_id).in_(main_ids))
+        select(BotReply)
+        .where(col(BotReply.id).in_(latest_bot_reply_id_subq()))
+        .where(col(BotReply.ticket_id).in_(main_ids))
     )
     bot_reply_map = {br.ticket_id: br for br in bot_reply_result.all()}
 

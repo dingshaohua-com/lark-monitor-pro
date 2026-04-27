@@ -1,10 +1,11 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from typing import List
 from functools import partial
-from sqlalchemy import BigInteger, func
+from sqlalchemy import BigInteger, Date, cast, func
 from sqlmodel import select, col
 from server.model.message import Message
-from server.model.bot_reply import BotReply
+from server.model.bot_reply import BotReply, latest_bot_reply_id_subq
 from server.model.duty_schedule import DutySchedule
 from server.model.qa_tracking import QaTracking
 from server.schema.common import Page
@@ -38,7 +39,11 @@ async def _attach_bot_processed(session: AsyncSession, messages: List[Message]) 
     if not thread_ids:
         return
 
-    stmt = select(BotReply).where(BotReply.ticket_id.in_(thread_ids))
+    stmt = (
+        select(BotReply)
+        .where(col(BotReply.id).in_(latest_bot_reply_id_subq()))
+        .where(col(BotReply.ticket_id).in_(thread_ids))
+    )
     br_result = await session.exec(stmt)
     bot_reply_map = {br.ticket_id: br for br in br_result.all()}
 
@@ -51,23 +56,20 @@ async def _attach_bot_processed(session: AsyncSession, messages: List[Message]) 
         m.parsed_data = pd
 
 
-def _resolve_duty_date(msg: Message) -> date | None:
-    """从主消息推导值班日期：优先 parsed_data.content.feedback_time(YYYY-MM-DD...)，否则 raw_data.create_time(毫秒戳)"""
-    parsed = msg.parsed_data or {}
-    content = parsed.get("content") if isinstance(parsed, dict) else None
-    if isinstance(content, dict):
-        ft = content.get("feedback_time")
-        if isinstance(ft, str) and len(ft) >= 10:
-            try:
-                return date.fromisoformat(ft[:10])
-            except Exception:
-                pass
+_CN_TZ = ZoneInfo("Asia/Shanghai")
 
+
+def _resolve_duty_date(msg: Message) -> date | None:
+    """从主消息推导值班日期：统一以 raw_data.create_time(毫秒戳) 转中国时区(Asia/Shanghai)的日期为基准。
+
+    业务上 duty_schedule.duty_date 与用户填写的反馈日期都按北京时间计算，
+    需与 get_list 中 duty_user 过滤的 SQL 端时区保持一致。
+    """
     raw = msg.raw_data or {}
     ct = raw.get("create_time") if isinstance(raw, dict) else None
     if ct:
         try:
-            return date.fromtimestamp(int(ct) / 1000)
+            return datetime.fromtimestamp(int(ct) / 1000, tz=_CN_TZ).date()
         except Exception:
             pass
     return None
@@ -182,7 +184,7 @@ async def get_list(
     - problem_category   → 关联 bot_reply 表过滤
     - start_date / end_date → raw_data.create_time(毫秒戳) 做范围过滤
     - has_bot_processed  → "yes"/"no"，工单是否在 bot_reply 表里有记录
-    - duty_user          → 先查 duty_schedule 拿匹配日期，再用 feedback_time 前 10 位 IN
+    - duty_user          → 先查 duty_schedule 拿匹配日期，再用 raw_data.create_time(Asia/Shanghai) 转日期 IN
     - has_qa_tracking    → "yes"/"no"，工单 feedback_id 是否在 qa_tracking 表里
     """
     base_where = col(Message.type) == "thread"
@@ -190,8 +192,10 @@ async def get_list(
         user_content = col(Message.parsed_data)["content"]["user_content"].astext
         base_where = base_where & user_content.ilike(f"%{keyword.strip()}%")
     if problem_category:
-        ticket_subq = select(col(BotReply.ticket_id)).where(
-            col(BotReply.problem_category) == problem_category
+        ticket_subq = (
+            select(col(BotReply.ticket_id))
+            .where(col(BotReply.id).in_(latest_bot_reply_id_subq()))
+            .where(col(BotReply.problem_category) == problem_category)
         )
         base_where = base_where & col(Message.id).in_(ticket_subq)
 
@@ -218,14 +222,16 @@ async def get_list(
             col(DutySchedule.duty_user).ilike(f"%{duty_user_kw}%")
         )
         dates_result = await session.exec(dates_stmt)
-        matched_dates = [d.isoformat() for d in dates_result.all()]
+        matched_dates = list(dates_result.all())
         if not matched_dates:
             return Page[Message](items=[], total=0, page=page, pageSize=page_size or 0)
-        # 再用 feedback_time 前 10 位 IN 这些日期字符串
-        feedback_date_str = func.substring(
-            col(Message.parsed_data)["content"]["feedback_time"].astext, 1, 10
+        # 用 raw_data.create_time(毫秒戳) 转 Asia/Shanghai 日期后 IN matched_dates
+        ct_ms_expr = col(Message.raw_data)["create_time"].astext.cast(BigInteger)
+        ct_date = cast(
+            func.timezone("Asia/Shanghai", func.to_timestamp(ct_ms_expr / 1000.0)),
+            Date,
         )
-        base_where = base_where & feedback_date_str.in_(matched_dates)
+        base_where = base_where & ct_date.in_(matched_dates)
 
     if has_qa_tracking in ("yes", "no"):
         feedback_id_str = col(Message.parsed_data)["content"]["feedback_id"].astext
@@ -303,29 +309,23 @@ async def _calc_period_stats(
         )
     ).one() or 0
 
-    # 3. 问题分类分布
-    #    先在 bot_reply 上 GROUP BY problem_category 拿到已分类数
-    #    再用 total - 已分类总数 得到"待人工确认"（未机器人处理 + 处理但分类为空）
+    # 3. 问题分类分布（每工单只算一次，取最新一条 bot_reply.problem_category）
+    #    上游已保证：每个工单在 bot_reply 表里都有记录，且 problem_category 不为空。
+    #    所以这里直接 group by 输出，期望 sum(problem_category_counts) == total。
     period_thread_ids_subq = select(col(Message.id)).where(base_where)
     pc_stmt = (
         select(col(BotReply.problem_category), func.count())
+        .where(col(BotReply.id).in_(latest_bot_reply_id_subq()))
         .where(col(BotReply.ticket_id).in_(period_thread_ids_subq))
         .group_by(col(BotReply.problem_category))
     )
     pc_result = await session.exec(pc_stmt)
 
     problem_category_counts: dict[str, int] = {}
-    classified_total = 0
     for pc, cnt in pc_result.all():
-        key = pc or "待人工确认"
-        problem_category_counts[key] = problem_category_counts.get(key, 0) + cnt
-        classified_total += cnt
-
-    unclassified = total - classified_total
-    if unclassified > 0:
-        problem_category_counts["待人工确认"] = (
-            problem_category_counts.get("待人工确认", 0) + unclassified
-        )
+        if pc is None or pc == "":
+            continue
+        problem_category_counts[pc] = problem_category_counts.get(pc, 0) + cnt
 
     correct_count = sum(
         problem_category_counts.get(c, 0) for c in _CORRECT_CATEGORIES
