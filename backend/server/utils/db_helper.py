@@ -45,8 +45,12 @@ class DatabaseService:
             finally:
                 await session.close()
 
-# 预创建两个实例（此时只是配置，还没开工）
+# 预创建实例（此时只是配置，还没开工）
 PGSQL_URI=getenv("PGSQL_URI")
 print('PGSQL_URI'+PGSQL_URI)
 lark_monitor_db_url=PGSQL_URI+"/lark_monitor_pro"
 lark_monitor_db = DatabaseService(lark_monitor_db_url, "lark_monitor_pro")
+
+# annotation_db：外部库，只用于每日把 bot_reply 同步到本地，运行时只读
+annotation_db_url = PGSQL_URI + "/annotation_db"
+annotation_db = DatabaseService(annotation_db_url, "annotation_db")

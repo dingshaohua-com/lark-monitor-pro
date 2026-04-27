@@ -1,4 +1,4 @@
-import { CalendarOutlined, DatabaseOutlined, DeleteOutlined, FileSearchOutlined, SyncOutlined } from '@ant-design/icons';
+import { CalendarOutlined, DatabaseOutlined, DeleteOutlined, FileSearchOutlined, RobotOutlined, SyncOutlined } from '@ant-design/icons';
 import { Alert, Button, Card, DatePicker, Modal, Radio, Space, Spin, Tag, theme } from 'antd';
 import dayjs from 'dayjs';
 import { useCallback, useEffect, useState } from 'react';
@@ -55,7 +55,7 @@ const formatTime = (v: string | null | undefined) => {
   });
 };
 
-function BitableSyncCard({ title, icon, apiPath, busy: parentBusy }: { title: string; icon: React.ReactNode; apiPath: string; busy: boolean }) {
+function BitableSyncCard({ title, icon, apiPath, busy: parentBusy, description = '从飞书多维表格拉取最新数据同步到本地数据库' }: { title: string; icon: React.ReactNode; apiPath: string; busy: boolean; description?: string }) {
   const task = useTaskRunner();
   const [syncedCount, setSyncedCount] = useState<number | null>(null);
 
@@ -79,7 +79,7 @@ function BitableSyncCard({ title, icon, apiPath, busy: parentBusy }: { title: st
       title={<Space>{icon}<span style={{ fontWeight: 600 }}>{title}</span></Space>}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <span style={{ color: '#888', fontSize: 13 }}>从飞书多维表格拉取最新数据同步到本地数据库</span>
+        <span style={{ color: '#888', fontSize: 13 }}>{description}</span>
         <Button
           type="primary"
           icon={<SyncOutlined spin={running} />}
@@ -230,6 +230,15 @@ export default function Sync() {
         icon={<FileSearchOutlined style={{ color: token.colorWarning }} />}
         apiPath="/api/bitable/sync-qa-tracking"
         busy={busy}
+      />
+
+      {/* ========== 机器人回复同步 ========== */}
+      <BitableSyncCard
+        title="机器人回复"
+        icon={<RobotOutlined style={{ color: token.colorInfo }} />}
+        apiPath="/api/bot-reply/sync"
+        busy={busy}
+        description="从 annotation_db 拉取最新机器人回复同步到本地数据库"
       />
     </div>
   );

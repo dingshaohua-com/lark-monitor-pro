@@ -136,10 +136,14 @@ async def sync_table_helper(session: AsyncSession, items,  parent_node ):
     # 这一步的仪式感在于：它保证了同步任务是“幂等”的（重复运行也不会报错）
     stmt = insert(Message).values(data_to_sync)
 
+    # 冲突时同步刷新 raw_data / parsed_data / type，保证"谁变更新谁"
+    # 没变的字段写入相同值，行为与不更新等价；变了的字段会被同步刷新
     upsert_stmt = stmt.on_conflict_do_update(
-        index_elements=['id'],  # 冲突检测的字段
+        index_elements=['id'],
         set_={
-            "raw_data": stmt.excluded.raw_data,  # 如果冲突，更新 raw_data 字段
+            "raw_data": stmt.excluded.raw_data,
+            "parsed_data": stmt.excluded.parsed_data,
+            "type": stmt.excluded.type,
         }
     )
 

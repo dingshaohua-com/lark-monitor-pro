@@ -231,7 +231,13 @@ async def get_list(
     count_stmt = select(func.count()).select_from(Message).where(base_where)
     total = (await session.exec(count_stmt)).one() or 0
 
-    statement = select(Message).where(base_where).order_by(col(Message.id))
+    # 默认按反馈时间倒序（最新在前）；create_time 缺失的统一排在最后
+    create_time_ms_order = col(Message.raw_data)["create_time"].astext.cast(BigInteger)
+    statement = (
+        select(Message)
+        .where(base_where)
+        .order_by(create_time_ms_order.desc().nulls_last(), col(Message.id).desc())
+    )
     if page_size is not None:
         statement = statement.offset((page - 1) * page_size).limit(page_size)
     result_threads = await session.exec(statement)

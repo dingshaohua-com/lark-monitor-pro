@@ -2,6 +2,7 @@ from fastapi import APIRouter
 from . import root
 from . import message
 from . import bitable
+from . import bot_reply
 
 # 创建父路由，统一添加 /api 前缀
 router = APIRouter(prefix="/api")
@@ -14,3 +15,4 @@ async def api_handler():
 router.include_router(root.router)
 router.include_router(message.router)
 router.include_router(bitable.router)
+router.include_router(bot_reply.router)
