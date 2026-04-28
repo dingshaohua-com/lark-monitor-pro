@@ -1,3 +1,13 @@
+import sys
+
+# Windows 控制台默认 GBK，无法输出 emoji，这里强制 stdout/stderr 走 UTF-8
+# 必须放在所有 print / 业务 import 之前
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 from dotenv import load_dotenv
 
 from server.utils.lark_oapi_helper import init_lark_client

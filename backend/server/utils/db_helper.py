@@ -46,9 +46,11 @@ class DatabaseService:
                 await session.close()
 
 # 预创建实例（此时只是配置，还没开工）
-PGSQL_URI=getenv("PGSQL_URI")
-print('PGSQL_URI'+PGSQL_URI)
-lark_monitor_db_url=PGSQL_URI+"/lark_monitor_pro"
+PGSQL_URI = getenv("PGSQL_URI")
+if not PGSQL_URI:
+    raise RuntimeError("环境变量 PGSQL_URI 未设置，请检查 .env 文件")
+print(f"PGSQL_URI = {PGSQL_URI}")
+lark_monitor_db_url = PGSQL_URI + "/lark_monitor_pro"
 lark_monitor_db = DatabaseService(lark_monitor_db_url, "lark_monitor_pro")
 
 # annotation_db：外部库，只用于每日把 bot_reply 同步到本地，运行时只读
